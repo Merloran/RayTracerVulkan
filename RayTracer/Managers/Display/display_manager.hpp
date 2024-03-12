@@ -6,7 +6,7 @@ public:
 	SDisplayManager(SDisplayManager&) = delete;
 	static SDisplayManager &get();
 
-	void startup();
+	Void startup();
 
 	[[nodiscard]]
 	const IVector2 &get_framebuffer_size();
@@ -25,7 +25,7 @@ private:
 	SDisplayManager()  = default;
 	~SDisplayManager() = default;
 
-	String name				  = "BaseWindow";
+	String name				  = "Ray Tracer";
 	struct GLFWwindow* window = nullptr;
 	IVector2 windowSize		  = { 1024, 768 };
 	IVector2 framebufferSize{};

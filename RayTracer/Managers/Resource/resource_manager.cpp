@@ -13,6 +13,12 @@
 
 #include <filesystem>
 
+SResourceManager& SResourceManager::get()
+{
+	static SResourceManager instance;
+	return instance;
+}
+
 Void SResourceManager::startup()
 {
 	SPDLOG_INFO("Resource Manager startup.");
@@ -41,12 +47,6 @@ Void SResourceManager::startup()
 													   ETextureType::AmbientOcclusion));
 
 	create_material(defaultMaterial, defaultMaterial.name);
-}
-
-SResourceManager& SResourceManager::get()
-{
-	static SResourceManager instance;
-	return instance;
 }
 
 Void SResourceManager::load_gltf_asset(const String& filePath)

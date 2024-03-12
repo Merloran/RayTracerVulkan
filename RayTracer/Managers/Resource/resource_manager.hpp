@@ -26,8 +26,8 @@ public:
 	const String ASSETS_PATH   = "Resources/Assets/";
 
 	SResourceManager(SResourceManager&) = delete;
-
 	static SResourceManager& get();
+
 	Void startup();
 
 	Void load_gltf_asset(const String& filePath);
