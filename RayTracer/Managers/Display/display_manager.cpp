@@ -57,6 +57,11 @@ Float32 SDisplayManager::get_aspect_ratio() const
 	return Float32(windowSize.x) / Float32(windowSize.y);
 }
 
+GLFWwindow* SDisplayManager::get_window() const
+{
+	return window;
+}
+
 Void SDisplayManager::poll_events()
 {
 	glfwPollEvents();

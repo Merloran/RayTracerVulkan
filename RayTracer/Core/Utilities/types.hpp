@@ -21,9 +21,15 @@ using Float64 = double;
 using String	   = std::string;
 
 template<typename Type>
+using Limits	   = std::numeric_limits<Type>;
+template<typename Type>
+using Optional	   = std::optional<Type>;
+template<typename Type>
 using List		   = std::list<Type>;
 template<typename Type>
 using DynamicArray = std::vector<Type>;
+template<typename Type>
+using Set		   = std::set<Type>;
 template<typename Type, UInt64 Count>
 using Array		   = std::array<Type, Count>;
 template<typename KeyType, typename ValueType>

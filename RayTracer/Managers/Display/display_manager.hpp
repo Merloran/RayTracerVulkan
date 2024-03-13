@@ -1,5 +1,5 @@
 #pragma once
-
+struct GLFWwindow;
 class SDisplayManager
 {
 public:
@@ -14,6 +14,9 @@ public:
 	const IVector2 &get_window_size();
 	[[nodiscard]]
 	Float32			get_aspect_ratio() const;
+	[[nodiscard]]
+	GLFWwindow*		get_window() const;
+
 
 	Void poll_events();
 	[[nodiscard]]
@@ -25,9 +28,9 @@ private:
 	SDisplayManager()  = default;
 	~SDisplayManager() = default;
 
-	String name				  = "Ray Tracer";
-	struct GLFWwindow* window = nullptr;
-	IVector2 windowSize		  = { 1024, 768 };
+	String name			= "Ray Tracer";
+	GLFWwindow* window	= nullptr;
+	IVector2 windowSize	= { 1024, 768 };
 	IVector2 framebufferSize{};
 };
 

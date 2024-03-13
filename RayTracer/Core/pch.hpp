@@ -1,10 +1,12 @@
 #pragma once
+#include <cstring>
+#include <optional>
 #include <vector>
 #include <list>
 #include <array>
 #include <unordered_map>
 #include <map>
-#include <cstring>
+#include <set>
 #include <glm/glm.hpp>
 #include <glm/gtx/string_cast.hpp>
 #include <spdlog/spdlog.h>
