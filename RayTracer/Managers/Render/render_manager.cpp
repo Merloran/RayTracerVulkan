@@ -1,8 +1,12 @@
 #include "render_manager.hpp"
 
+#include <filesystem>
+#include <fstream>
 #include <GLFW/glfw3.h>
 
 #include "../Display/display_manager.hpp"
+#include "../Resource/Common/handle.hpp"
+#include "Common/shader.hpp"
 
 
 SRenderManager& SRenderManager::get()
@@ -18,18 +22,75 @@ Void SRenderManager::startup()
     create_vulkan_instance();
     if constexpr (ENABLE_VALIDATION_LAYERS)
     {
-        debugMessenger.create(instance);
+        debugMessenger.create(instance, nullptr);
     }
     create_surface();
     pick_physical_device(physicalDevice);
     logicalDevice.create(physicalDevice, nullptr);
+    //Shaders should be created after logical device
+    Handle<Shader> vert = load_shader(SHADERS_PATH + "Shader.vert", EShaderType::Vertex);
+    Handle<Shader> frag = load_shader(SHADERS_PATH + "Shader.frag", EShaderType::Fragment);
+    DynamicArray<Shader> shaders;
+    shaders.emplace_back(get_shader_by_handle(vert));
+    shaders.emplace_back(get_shader_by_handle(frag));
     swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
     renderPass.create(physicalDevice, logicalDevice, swapchain, nullptr);
+    graphicsPipeline.create_graphics_pipeline(renderPass, shaders, logicalDevice, nullptr);
+    // computePipeline.create_compute_pipeline(, logicalDevice, nullptr);
 }
 
 const DynamicArray<const Char*>& SRenderManager::get_validation_layers()
 {
     return validationLayers;
+}
+
+const Handle<Shader>& SRenderManager::get_shader_handle_by_name(const String& name) const
+{
+    const auto& iterator = nameToIdShaders.find(name);
+    if (iterator == nameToIdShaders.end() || iterator->second.id < 0)
+    {
+        SPDLOG_WARN("Shader handle {} not found, returned None.", name);
+        return Handle<Shader>::sNone;
+    }
+
+    return iterator->second;
+}
+
+Shader& SRenderManager::get_shader_by_name(const String& name)
+{
+    const auto& iterator = nameToIdShaders.find(name);
+    if (iterator == nameToIdShaders.end() || iterator->second.id < 0 || iterator->second.id >= Int32(shaders.size()))
+    {
+        SPDLOG_WARN("Shader {} not found, returned default.", name);
+        return shaders[0];
+    }
+
+    return shaders[iterator->second.id];
+}
+
+Shader& SRenderManager::get_shader_by_handle(const Handle<Shader> handle)
+{
+    if (handle.id < 0 || handle.id >= Int32(shaders.size()))
+    {
+        SPDLOG_WARN("Shader {} not found, returned default.", handle.id);
+        return shaders[0];
+    }
+    return shaders[handle.id];
+}
+
+Handle<Shader> SRenderManager::load_shader(const String& filePath, const EShaderType shaderType)
+{
+    const UInt64 shaderId = shaders.size();
+    Shader& shader        = shaders.emplace_back();
+
+    const std::filesystem::path path(filePath);
+    const String destinationPath = (SHADERS_PATH / path.filename()).string() + COMPILED_SHADER_EXTENSION;
+    shader.create(filePath, destinationPath, GLSL_COMPILER_PATH, shaderType, logicalDevice, nullptr);
+
+    const Handle<Shader> handle{Int32(shaderId)};
+    nameToIdShaders[shader.get_file_path()] = handle;
+
+    return handle;
 }
 
 Void SRenderManager::create_vulkan_instance()
@@ -278,9 +339,16 @@ Void SRenderManager::shutdown()
 {
     SPDLOG_INFO("Render Manager shutdown.");
 
+    computePipeline.clear(logicalDevice, nullptr);
+    graphicsPipeline.clear(logicalDevice, nullptr);
     renderPass.clear(logicalDevice, nullptr);
     swapchain.clear(logicalDevice, nullptr);
-    logicalDevice.clear();
+
+    for (Shader& shader : shaders)
+    {
+        shader.clear(logicalDevice, nullptr);
+    }
+    logicalDevice.clear(nullptr);
 
     if constexpr (ENABLE_VALIDATION_LAYERS)
     {

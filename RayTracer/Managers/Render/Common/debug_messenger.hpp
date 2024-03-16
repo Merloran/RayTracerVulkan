@@ -4,7 +4,7 @@
 class DebugMessenger
 {
 public:
-	Void create(const VkInstance& instance);
+	Void create(const VkInstance& instance, const VkAllocationCallbacks* allocator);
 
 	const VkDebugUtilsMessengerEXT& get_debug_messenger() const;
 
@@ -16,7 +16,7 @@ public:
 														   const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 														   Void* pUserData);
 
-	Void clear(VkInstance& instance, const VkAllocationCallbacks* pAllocator);
+	Void clear(VkInstance& instance, const VkAllocationCallbacks* allocator);
 
 private:
 	VkDebugUtilsMessengerEXT debugMessenger = nullptr;

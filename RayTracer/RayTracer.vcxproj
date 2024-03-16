@@ -191,9 +191,12 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="Managers\Render\Common\debug_messenger.cpp" />
+    <ClCompile Include="Managers\Render\Common\descriptor_set.cpp" />
     <ClCompile Include="Managers\Render\Common\image.cpp" />
     <ClCompile Include="Managers\Render\Common\logical_device.cpp" />
+    <ClCompile Include="Managers\Render\Common\pipeline.cpp" />
     <ClCompile Include="Managers\Render\Common\render_pass.cpp" />
+    <ClCompile Include="Managers\Render\Common\shader.cpp" />
     <ClCompile Include="Managers\Render\Common\swapchain.cpp" />
     <ClCompile Include="Managers\Render\render_manager.cpp" />
     <ClCompile Include="Managers\Resource\Common\handle.cpp" />
@@ -205,10 +208,13 @@
     <ClInclude Include="Core\pch.hpp" />
     <ClInclude Include="Core\Utilities\types.hpp" />
     <ClInclude Include="Managers\Render\Common\debug_messenger.hpp" />
+    <ClInclude Include="Managers\Render\Common\descriptor_set.hpp" />
     <ClInclude Include="Managers\Render\Common\image.hpp" />
     <ClInclude Include="Managers\Render\Common\logical_device.hpp" />
     <ClInclude Include="Managers\Render\Common\physical_device.hpp" />
+    <ClInclude Include="Managers\Render\Common\pipeline.hpp" />
     <ClInclude Include="Managers\Render\Common\render_pass.hpp" />
+    <ClInclude Include="Managers\Render\Common\shader.hpp" />
     <ClInclude Include="Managers\Render\Common\swapchain.hpp" />
     <ClInclude Include="Managers\Render\render_manager.hpp" />
     <ClInclude Include="Managers\Resource\Common\handle.hpp" />

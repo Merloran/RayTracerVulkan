@@ -62,7 +62,7 @@ VkSampleCountFlagBits LogicalDevice::get_samples() const
     return samples;
 }
 
-Void LogicalDevice::clear()
+Void LogicalDevice::clear(const VkAllocationCallbacks* allocator)
 {
-    vkDestroyDevice(device, nullptr);
+    vkDestroyDevice(device, allocator);
 }

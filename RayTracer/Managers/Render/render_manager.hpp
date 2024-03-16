@@ -7,7 +7,13 @@
 
 #include <vulkan/vulkan.h>
 
+#include "Common/pipeline.hpp"
 
+
+template<typename Type>
+struct Handle;
+class Shader;
+enum class EShaderType : UInt8;
 
 class SRenderManager
 {
@@ -17,7 +23,9 @@ public:
 #else
 	static constexpr Bool ENABLE_VALIDATION_LAYERS = true;
 #endif
-
+	const String SHADERS_PATH = "Resources/Shaders/";
+	const String COMPILED_SHADER_EXTENSION = ".spv";
+	const String GLSL_COMPILER_PATH = "D:/VulkanSDK/Bin/glslc.exe";
 	SRenderManager(SRenderManager&) = delete;
 	static SRenderManager& get();
 
@@ -25,6 +33,13 @@ public:
 
 	VkImageView create_image_view(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, UInt32 mipLevels);
 	const DynamicArray<const Char*>& get_validation_layers();
+
+	[[nodiscard]]
+	const Handle<Shader>& get_shader_handle_by_name(const String& name)  const;
+	Shader& get_shader_by_name(const String& name);
+	Shader& get_shader_by_handle(const Handle<Shader> handle);
+
+	Handle<Shader> load_shader(const String& filePath, const EShaderType shaderType);
 
 	Void shutdown();
 
@@ -45,6 +60,8 @@ private:
 	LogicalDevice logicalDevice;
 	Swapchain swapchain;
 	RenderPass renderPass;
+	Pipeline graphicsPipeline;
+	Pipeline computePipeline;
 
 
 
@@ -59,5 +76,8 @@ private:
 	Void find_queue_families(PhysicalDevice &device);
 	Void has_swapchain_support(PhysicalDevice &device);
 	Void get_max_sample_count(PhysicalDevice &device);
+
+	HashMap<String, Handle<Shader>> nameToIdShaders;
+	DynamicArray<Shader> shaders;
 };
 

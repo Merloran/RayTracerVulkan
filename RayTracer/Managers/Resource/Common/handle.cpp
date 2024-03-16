@@ -3,8 +3,10 @@
 #include "mesh.hpp"
 #include "model.hpp"
 #include "material.hpp"
+#include "../../Render/Common/shader.hpp"
 
 const Handle<Model> Handle<Model>::sNone = { -1 };
 const Handle<Mesh> Handle<Mesh>::sNone = { -1 };
 const Handle<Material> Handle<Material>::sNone = { -1 };
 const Handle<Texture> Handle<Texture>::sNone = { -1 };
+const Handle<Shader> Handle<Shader>::sNone = { -1 };

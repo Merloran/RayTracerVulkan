@@ -1,11 +1,11 @@
 #include "debug_messenger.hpp"
 
-Void DebugMessenger::create(const VkInstance& instance)
+Void DebugMessenger::create(const VkInstance& instance, const VkAllocationCallbacks* allocator)
 {
     VkDebugUtilsMessengerCreateInfoEXT createInfo{};
     fill_debug_messenger_create_info(createInfo);
 
-    if (create_debug_messenger(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS)
+    if (create_debug_messenger(instance, &createInfo, allocator, &debugMessenger) != VK_SUCCESS)
     {
         throw std::runtime_error("failed to set up debug messenger!");
     }
@@ -105,11 +105,11 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessenger::s_debug_callback(VkDebugUtilsMess
     return VK_FALSE;
 }
 
-Void DebugMessenger::clear(VkInstance& instance, const VkAllocationCallbacks* pAllocator)
+Void DebugMessenger::clear(VkInstance& instance, const VkAllocationCallbacks* allocator)
 {
 	const auto function = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
     if (function != nullptr)
     {
-        function(instance, debugMessenger, pAllocator);
+        function(instance, debugMessenger, allocator);
     }
 }

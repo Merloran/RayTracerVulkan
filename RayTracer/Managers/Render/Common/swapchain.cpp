@@ -1,6 +1,6 @@
 #include "../../Display/display_manager.hpp"
 #include "../render_manager.hpp"
-
+//TODO: ATTENTION BUG PRONE SHIT!
 #include "swapchain.hpp"
 #include "logical_device.hpp"
 #include "physical_device.hpp"

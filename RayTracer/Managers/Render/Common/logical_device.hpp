@@ -11,7 +11,7 @@ public:
     const VkDevice& get_device() const;
     VkSampleCountFlagBits get_samples() const;
 
-    Void clear();
+    Void clear(const VkAllocationCallbacks* allocator);
 
 private:
 	VkDevice device;

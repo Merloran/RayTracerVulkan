@@ -73,7 +73,7 @@ public:
 	[[nodiscard]]
 	const DynamicArray<Texture>  &get_textures()  const;
 
-	void shutdown();
+	Void shutdown();
 
 protected:
 	template<typename DataType, typename ArrayType>
@@ -103,16 +103,16 @@ private:
 	SResourceManager() = default;
 	~SResourceManager() = default;
 
-	std::unordered_map<String, Handle<Model>> nameToIdModels;
+	HashMap<String, Handle<Model>> nameToIdModels;
 	DynamicArray<Model> models;
 
-	std::unordered_map<String, Handle<Mesh>> nameToIdMeshes;
+	HashMap<String, Handle<Mesh>> nameToIdMeshes;
 	DynamicArray<Mesh> meshes;
 
-	std::unordered_map<String, Handle<Material>> nameToIdMaterials;
+	HashMap<String, Handle<Material>> nameToIdMaterials;
 	DynamicArray<Material> materials;
 
-	std::unordered_map<String, Handle<Texture>> nameToIdTextures;
+	HashMap<String, Handle<Texture>> nameToIdTextures;
 	DynamicArray<Texture> textures;
 };
 

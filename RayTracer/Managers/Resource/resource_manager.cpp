@@ -541,7 +541,7 @@ const DynamicArray<Texture>& SResourceManager::get_textures() const
 	return textures;
 }
 
-void SResourceManager::shutdown()
+Void SResourceManager::shutdown()
 {
 	SPDLOG_INFO("Resource Manager shutdown.");
 	nameToIdTextures.clear();
