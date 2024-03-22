@@ -1,19 +1,21 @@
 #pragma once
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
+class DescriptorPool;
 class RenderPass;
-struct Mesh;
 class Shader;
 class LogicalDevice;
 
 class Pipeline
 {
 public:
-	Void create_graphics_pipeline(const RenderPass& renderPass,
+	Void create_graphics_pipeline(const DescriptorPool& descriptorPool,
+								  const RenderPass& renderPass,
 								  const DynamicArray<Shader>& shaders,
 								  const LogicalDevice& logicalDevice,
 								  const VkAllocationCallbacks* allocator);
-	Void create_compute_pipeline(const Shader& shader,
+	Void create_compute_pipeline(const DescriptorPool& descriptorPool, 
+								 const Shader& shader,
 								 const LogicalDevice& logicalDevice,
 								 const VkAllocationCallbacks* allocator);
 

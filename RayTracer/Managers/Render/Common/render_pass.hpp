@@ -1,7 +1,7 @@
 #pragma once
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
-struct PhysicalDevice;
+class PhysicalDevice;
 class LogicalDevice;
 class Swapchain;
 

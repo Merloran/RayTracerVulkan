@@ -1,5 +1,7 @@
 #include "debug_messenger.hpp"
 
+#include <magic_enum.hpp>
+
 Void DebugMessenger::create(const VkInstance& instance, const VkAllocationCallbacks* allocator)
 {
     VkDebugUtilsMessengerCreateInfoEXT createInfo{};
@@ -17,6 +19,11 @@ const VkDebugUtilsMessengerEXT& DebugMessenger::get_debug_messenger() const
     return debugMessenger;
 }
 
+const DynamicArray<const Char*>& DebugMessenger::get_validation_layers() const
+{
+    return validationLayers;
+}
+
 Void DebugMessenger::fill_debug_messenger_create_info(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
 {
     createInfo = {};
@@ -32,7 +39,6 @@ Void DebugMessenger::fill_debug_messenger_create_info(VkDebugUtilsMessengerCreat
 
     createInfo.pfnUserCallback = s_debug_callback;
 }
-
 
 Bool DebugMessenger::check_validation_layer_support() const
 {
@@ -97,7 +103,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessenger::s_debug_callback(VkDebugUtilsMess
         }
         default:
         {
-            SPDLOG_INFO("Not supported severity!");
+            SPDLOG_INFO("Not supported severity: {}\n {}", magic_enum::enum_name(messageSeverity), pCallbackData->pMessage);
             break;
         }
     }

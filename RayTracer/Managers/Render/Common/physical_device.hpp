@@ -1,8 +1,38 @@
 #pragma once
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
-struct PhysicalDevice
+class PhysicalDevice
 {
+public:
+
+    Void select_physical_device(VkInstance instance, VkSurfaceKHR surface);
+
+    [[nodiscard]]
+    VkPhysicalDevice get_device() const;
+    [[nodiscard]]
+	UInt32 get_graphics_family_index() const;
+    [[nodiscard]]
+	UInt32 get_compute_family_index() const;
+    [[nodiscard]]
+	UInt32 get_present_family_index() const;
+    [[nodiscard]]
+    VkSampleCountFlagBits get_max_samples() const;
+    [[nodiscard]]
+    const VkSurfaceCapabilitiesKHR &get_capabilities() const;
+    [[nodiscard]]
+    const DynamicArray<VkSurfaceFormatKHR> &get_formats() const;
+    [[nodiscard]]
+    const DynamicArray<VkPresentModeKHR> &get_present_modes() const;
+    [[nodiscard]]
+    const DynamicArray<const Char*> &get_device_extensions() const;
+    [[nodiscard]]
+    VkFormat find_depth_format() const;
+	[[nodiscard]]
+    VkFormat find_supported_format(const std::vector<VkFormat>& candidates,
+                                   VkImageTiling tiling,
+                                   VkFormatFeatureFlags features) const;
+
+private:
 	VkPhysicalDevice device;
     VkSampleCountFlagBits maxSamples;
     VkSurfaceCapabilitiesKHR capabilities;
@@ -18,60 +48,10 @@ struct PhysicalDevice
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
     };
 
-    Bool are_families_valid() const
-    {
-        return computeFamily.has_value() && graphicsFamily.has_value() && presentFamily.has_value();
-    }
-
-
-    Bool check_extension_support() const
-    {
-        UInt32 extensionCount;
-        vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
-
-        DynamicArray<VkExtensionProperties> availableExtensions(extensionCount);
-        vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
-
-        Set<String> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
-
-        for (const VkExtensionProperties& extension : availableExtensions)
-        {
-            requiredExtensions.erase(extension.extensionName);
-        }
-
-        return requiredExtensions.empty();
-    }
-
-    VkFormat find_depth_format() const
-    {
-        return find_supported_format({
-                                     VK_FORMAT_D32_SFLOAT,
-                                     VK_FORMAT_D32_SFLOAT_S8_UINT,
-                                     VK_FORMAT_D24_UNORM_S8_UINT
-                                     },
-                                     VK_IMAGE_TILING_OPTIMAL,
-                                    VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
-    }
-
-    VkFormat find_supported_format(const std::vector<VkFormat>& candidates,
-                                   VkImageTiling tiling,
-                                   VkFormatFeatureFlags features) const
-    {
-        for (const VkFormat format : candidates)
-        {
-            VkFormatProperties props;
-            vkGetPhysicalDeviceFormatProperties(device, format, &props);
-
-            if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features)
-            {
-                return format;
-            }
-            else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features)
-            {
-                return format;
-            }
-        }
-
-        throw std::runtime_error("failed to find supported format!");
-    }
+    Bool is_device_suitable(VkSurfaceKHR surface);
+    Void find_queue_families(VkSurfaceKHR surface);
+    Void has_swapchain_support(VkSurfaceKHR surface);
+    Void get_max_sample_count();
+    Bool are_families_valid() const;
+    Bool check_extension_support() const;
 };

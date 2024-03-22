@@ -1,17 +1,16 @@
 #include "pipeline.hpp"
 
+#include "descriptor_pool.hpp"
 #include "logical_device.hpp"
+#include "render_pass.hpp"
 #include "shader.hpp"
 
 #include <magic_enum.hpp>
 
-#include "render_pass.hpp"
 
-
-Void Pipeline::create_graphics_pipeline(const RenderPass& renderPass, const DynamicArray<Shader>& shaders, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+Void Pipeline::create_graphics_pipeline(const DescriptorPool& descriptorPool, const RenderPass& renderPass, const DynamicArray<Shader>& shaders, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
-    DynamicArray<VkDescriptorSetLayout> desc;
-    create_descriptor_set_layout_info(desc, logicalDevice, allocator);
+    create_descriptor_set_layout_info(descriptorPool.get_layouts(), logicalDevice, allocator);
 
     DynamicArray<VkPipelineShaderStageCreateInfo> shaderStageInfos;
     shaderStageInfos.reserve(shaders.size());
@@ -134,10 +133,9 @@ Void Pipeline::create_graphics_pipeline(const RenderPass& renderPass, const Dyna
     }
 }
 
-Void Pipeline::create_compute_pipeline(const Shader& shader, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+Void Pipeline::create_compute_pipeline(const DescriptorPool& descriptorPool, const Shader& shader, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
-    DynamicArray<VkDescriptorSetLayout> desc;
-    create_descriptor_set_layout_info(desc, logicalDevice, allocator);
+    create_descriptor_set_layout_info(descriptorPool.get_layouts(), logicalDevice, allocator);
 
     VkPipelineShaderStageCreateInfo shaderStageInfo;
     const Bool isValid = create_shader_stage_info(shader, shaderStageInfo);

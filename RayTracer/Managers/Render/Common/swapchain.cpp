@@ -7,18 +7,23 @@
 
 Void Swapchain::create(const LogicalDevice& logicalDevice, const PhysicalDevice& physicalDevice, const VkSurfaceKHR& surface, const VkAllocationCallbacks* allocator)
 {
-    VkSurfaceFormatKHR surfaceFormat = choose_swap_surface_format(physicalDevice.formats);
-    VkPresentModeKHR   presentMode   = choose_swap_present_mode(physicalDevice.presentModes);
-    extent                           = choose_swap_extent(physicalDevice.capabilities);
-    UInt32             imageCount    = physicalDevice.capabilities.minImageCount + 1;
+    const VkSurfaceCapabilitiesKHR& capabilities = physicalDevice.get_capabilities();
+    VkSurfaceFormatKHR surfaceFormat = choose_swap_surface_format(physicalDevice.get_formats());
+    VkPresentModeKHR   presentMode   = choose_swap_present_mode(physicalDevice.get_present_modes());
+    extent                           = choose_swap_extent(capabilities);
+    UInt32             imageCount    = capabilities.minImageCount + 1;
 
-    if (physicalDevice.capabilities.maxImageCount > 0)
+    if (capabilities.maxImageCount > 0)
     {
-        imageCount = std::min(imageCount, physicalDevice.capabilities.maxImageCount);
+        imageCount = std::min(imageCount, capabilities.maxImageCount);
     }
 
     VkSwapchainCreateInfoKHR createInfo{};
-    Array<UInt32, 2> queueFamilyIndices = { physicalDevice.graphicsFamily.value(), physicalDevice.presentFamily.value() };
+    Array<UInt32, 2> queueFamilyIndices = 
+    {
+    	physicalDevice.get_graphics_family_index(),
+    	physicalDevice.get_present_family_index()
+    };
 
     createInfo.sType            = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     createInfo.surface          = surface;
@@ -28,7 +33,7 @@ Void Swapchain::create(const LogicalDevice& logicalDevice, const PhysicalDevice&
     createInfo.imageExtent      = VkExtent2D{ extent.x, extent.y };
     createInfo.imageArrayLayers = 1;
     createInfo.imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    if (physicalDevice.graphicsFamily != physicalDevice.presentFamily)
+    if (physicalDevice.get_graphics_family_index() != physicalDevice.get_present_family_index())
     {
         createInfo.imageSharingMode      = VK_SHARING_MODE_CONCURRENT;
         createInfo.queueFamilyIndexCount = queueFamilyIndices.size();
@@ -39,7 +44,7 @@ Void Swapchain::create(const LogicalDevice& logicalDevice, const PhysicalDevice&
         createInfo.queueFamilyIndexCount = 0; // Optional
         createInfo.pQueueFamilyIndices   = nullptr; // Optional
     }
-    createInfo.preTransform     = physicalDevice.capabilities.currentTransform;
+    createInfo.preTransform     = capabilities.currentTransform;
     createInfo.compositeAlpha   = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     createInfo.presentMode      = presentMode;
     createInfo.clipped          = VK_TRUE;

@@ -6,6 +6,7 @@
 
 #include "../Display/display_manager.hpp"
 #include "../Resource/Common/handle.hpp"
+#include "Common/command_buffer.hpp"
 #include "Common/shader.hpp"
 
 
@@ -20,13 +21,13 @@ Void SRenderManager::startup()
 	SPDLOG_INFO("Render Manager startup.");
 
     create_vulkan_instance();
-    if constexpr (ENABLE_VALIDATION_LAYERS)
+    if constexpr (DebugMessenger::ENABLE_VALIDATION_LAYERS)
     {
         debugMessenger.create(instance, nullptr);
     }
     create_surface();
-    pick_physical_device(physicalDevice);
-    logicalDevice.create(physicalDevice, nullptr);
+    physicalDevice.select_physical_device(instance, surface);
+    logicalDevice.create(physicalDevice, debugMessenger, nullptr);
     //Shaders should be created after logical device
     Handle<Shader> vert = load_shader(SHADERS_PATH + "Shader.vert", EShaderType::Vertex);
     Handle<Shader> frag = load_shader(SHADERS_PATH + "Shader.frag", EShaderType::Fragment);
@@ -35,13 +36,12 @@ Void SRenderManager::startup()
     shaders.emplace_back(get_shader_by_handle(frag));
     swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
     renderPass.create(physicalDevice, logicalDevice, swapchain, nullptr);
-    graphicsPipeline.create_graphics_pipeline(renderPass, shaders, logicalDevice, nullptr);
+    setup_graphics_descriptors();
+    create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    
+    
+    graphicsPipeline.create_graphics_pipeline(descriptorPool, renderPass, shaders, logicalDevice, nullptr);
     // computePipeline.create_compute_pipeline(, logicalDevice, nullptr);
-}
-
-const DynamicArray<const Char*>& SRenderManager::get_validation_layers()
-{
-    return validationLayers;
 }
 
 const Handle<Shader>& SRenderManager::get_shader_handle_by_name(const String& name) const
@@ -78,6 +78,41 @@ Shader& SRenderManager::get_shader_by_handle(const Handle<Shader> handle)
     return shaders[handle.id];
 }
 
+const Handle<CommandBuffer>& SRenderManager::get_command_buffer_handle_by_name(const String& name) const
+{
+    const auto& iterator = nameToIdCommandBuffers.find(name);
+    if (iterator == nameToIdCommandBuffers.end() || iterator->second.id < 0)
+    {
+        SPDLOG_WARN("Command buffer handle {} not found, returned None.", name);
+        return Handle<CommandBuffer>::sNone;
+    }
+
+    return iterator->second;
+}
+
+CommandBuffer& SRenderManager::get_command_buffer_by_name(const String& name)
+{
+    const auto& iterator = nameToIdCommandBuffers.find(name);
+    if (iterator == nameToIdCommandBuffers.end() || iterator->second.id < 0 || 
+        iterator->second.id >= Int32(commandBuffers.size()))
+    {
+        SPDLOG_WARN("Command buffer {} not found, returned default.", name);
+        return commandBuffers[0];
+    }
+
+    return commandBuffers[iterator->second.id];
+}
+
+CommandBuffer& SRenderManager::get_command_buffer_by_handle(const Handle<CommandBuffer> handle)
+{
+    if (handle.id < 0 || handle.id >= Int32(shaders.size()))
+    {
+        SPDLOG_WARN("Command buffer {} not found, returned default.", handle.id);
+        return commandBuffers[0];
+    }
+    return commandBuffers[handle.id];
+}
+
 Handle<Shader> SRenderManager::load_shader(const String& filePath, const EShaderType shaderType)
 {
     const UInt64 shaderId = shaders.size();
@@ -95,7 +130,7 @@ Handle<Shader> SRenderManager::load_shader(const String& filePath, const EShader
 
 Void SRenderManager::create_vulkan_instance()
 {
-    if constexpr (ENABLE_VALIDATION_LAYERS)
+    if constexpr (DebugMessenger::ENABLE_VALIDATION_LAYERS)
     {
         if (!debugMessenger.check_validation_layer_support())
         {
@@ -118,10 +153,11 @@ Void SRenderManager::create_vulkan_instance()
 
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
-    if constexpr (ENABLE_VALIDATION_LAYERS)
+    if constexpr (DebugMessenger::ENABLE_VALIDATION_LAYERS)
     {
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
         debugMessenger.fill_debug_messenger_create_info(debugCreateInfo);
+        const DynamicArray<const Char*>& validationLayers = debugMessenger.get_validation_layers();
         createInfo.enabledLayerCount = UInt32(validationLayers.size());
         createInfo.ppEnabledLayerNames = validationLayers.data();
         createInfo.pNext = &debugCreateInfo;
@@ -147,7 +183,7 @@ DynamicArray<const Char*> SRenderManager::get_required_extensions()
 
     DynamicArray<const Char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
-    if constexpr (ENABLE_VALIDATION_LAYERS)
+    if constexpr (DebugMessenger::ENABLE_VALIDATION_LAYERS)
     {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
@@ -157,7 +193,7 @@ DynamicArray<const Char*> SRenderManager::get_required_extensions()
 
 Void SRenderManager::create_surface()
 {
-    SDisplayManager& displayManager = SDisplayManager::get();
+	const SDisplayManager& displayManager = SDisplayManager::get();
 
     if (glfwCreateWindowSurface(instance, displayManager.get_window(), nullptr, &surface) != VK_SUCCESS)
     {
@@ -165,152 +201,81 @@ Void SRenderManager::create_surface()
     }
 }
 
-Void SRenderManager::pick_physical_device(PhysicalDevice& selectedDevice)
+Void SRenderManager::create_command_pool(VkCommandPoolCreateFlagBits flags)
 {
-    // Check for device with Vulkan support
-    UInt32 deviceCount = 0;
-    vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
-    if (deviceCount == 0)
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags            = flags;
+    poolInfo.queueFamilyIndex = physicalDevice.get_graphics_family_index();
+
+    if (vkCreateCommandPool(logicalDevice.get_device(), &poolInfo, nullptr, &commandPool) != VK_SUCCESS)
     {
-        throw std::runtime_error("failed to find GPUs with Vulkan support!");
-    }
-
-    // Check for device that is suitable
-    DynamicArray<VkPhysicalDevice> devices(deviceCount);
-    vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
-    for (const VkPhysicalDevice& device : devices)
-    {
-        selectedDevice.device = device;
-
-        if (is_device_suitable(physicalDevice))
-        {
-            get_max_sample_count(physicalDevice);
-            break;
-        }
-
-        selectedDevice.device = VK_NULL_HANDLE;
-    }
-
-    if (selectedDevice.device == VK_NULL_HANDLE)
-    {
-        throw std::runtime_error("failed to find a suitable GPU!");
+        throw std::runtime_error("failed to create command pool!");
     }
 }
 
-Bool SRenderManager::is_device_suitable(PhysicalDevice &device)
+Void SRenderManager::create_command_buffers(VkCommandBufferLevel level, const DynamicArray<String>& names)
 {
-    find_queue_families(device);
+    commandBuffers.reserve(names.size());
+    DynamicArray<VkCommandBuffer> buffers;
+    buffers.resize(names.size());
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool        = commandPool;
+    allocInfo.level              = level;
+    allocInfo.commandBufferCount = UInt32(buffers.size());
 
-    Bool isSwapChainAdequate = false;
-    if (device.check_extension_support())
+    if (vkAllocateCommandBuffers(logicalDevice.get_device(), &allocInfo, buffers.data()) != VK_SUCCESS)
     {
-        has_swapchain_support(device);
-        isSwapChainAdequate = !device.formats.empty() && !device.presentModes.empty();
+        throw std::runtime_error("failed to allocate command buffers!");
     }
+
+    for (UInt64 i = 0; i < names.size(); ++i)
+    {
+        CommandBuffer& buffer = commandBuffers.emplace_back();
+        buffer.buffer = buffers[i];
+        buffer.name = names[i];
+    }
+}
+
+Void SRenderManager::setup_graphics_descriptors()
+{
+    DynamicArray<DescriptorSetInfo> infos;
+    DescriptorSetInfo& info = infos.emplace_back();
+    info.name = "GraphicsDescriptorSet";
+    info.bindings.reserve(4);
+    VkDescriptorSetLayoutBinding& uniform  = info.bindings.emplace_back();
+    VkDescriptorSetLayoutBinding& image    = info.bindings.emplace_back();
+    VkDescriptorSetLayoutBinding& storage1 = info.bindings.emplace_back();
+    VkDescriptorSetLayoutBinding& storage2 = info.bindings.emplace_back();
+
+    uniform.binding         = 0;
+    uniform.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uniform.descriptorCount = 1;
+    uniform.stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    image.binding         = 1;
+    image.descriptorCount = 1;
+    image.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    image.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    storage1.binding         = 2;
+    storage1.descriptorCount = 1;
+    storage1.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    storage1.stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    storage2.binding         = 3;
+    storage2.descriptorCount = 1;
+    storage2.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    storage2.stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+
+
+    descriptorPool.create(infos, logicalDevice, nullptr);
+
+
+
+    // descriptorPool.setup_sets(infos, logicalDevice, nullptr);
     
-    vkGetPhysicalDeviceFeatures(device.device, &device.supportedFeatures);
-
-    return device.are_families_valid() &&
-           isSwapChainAdequate &&
-           device.supportedFeatures.samplerAnisotropy;
-}
-
-Void SRenderManager::find_queue_families(PhysicalDevice& device)
-{
-    UInt32 queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device.device, &queueFamilyCount, nullptr);
-
-    DynamicArray<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(device.device, &queueFamilyCount, queueFamilies.data());
-
-    for (UInt32 i = 0; i < UInt32(queueFamilies.size()); ++i)
-    {
-        if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT &&
-            queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT)
-        {
-            device.graphicsFamily = i;
-            device.computeFamily = i;
-        }
-
-        VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(device.device, i, surface, &presentSupport);
-        if (presentSupport)
-        {
-            device.presentFamily = i;
-        }
-
-        if (device.are_families_valid())
-        {
-            break;
-        }
-    }
-}
-
-Void SRenderManager::has_swapchain_support(PhysicalDevice& device)
-{
-    UInt32 formatCount;
-    UInt32 presentModeCount;
-
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device.device, surface, &device.capabilities);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(device.device, surface, &formatCount, nullptr);
-
-    if (formatCount != 0)
-    {
-        device.formats.resize(formatCount);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(device.device,
-                                             surface,
-                                             &formatCount,
-                                             device.formats.data());
-    }
-
-    vkGetPhysicalDeviceSurfacePresentModesKHR(device.device,
-                                              surface,
-                                              &presentModeCount,
-                                              nullptr);
-
-    if (presentModeCount != 0)
-    {
-        device.presentModes.resize(presentModeCount);
-        vkGetPhysicalDeviceSurfacePresentModesKHR(device.device,
-                                                  surface,
-                                                  &presentModeCount,
-                                                  device.presentModes.data());
-    }
-}
-
-Void SRenderManager::get_max_sample_count(PhysicalDevice& device)
-{
-    vkGetPhysicalDeviceProperties(device.device, &device.properties);
-    VkSampleCountFlags counts = device.properties.limits.framebufferColorSampleCounts
-							  & device.properties.limits.framebufferDepthSampleCounts;
-
-
-    if (counts & VK_SAMPLE_COUNT_64_BIT)
-    {
-	    device.maxSamples = VK_SAMPLE_COUNT_64_BIT;
-    }
-    else if (counts & VK_SAMPLE_COUNT_32_BIT)
-    {
-        device.maxSamples = VK_SAMPLE_COUNT_32_BIT;
-    }
-    if (counts & VK_SAMPLE_COUNT_16_BIT)
-    {
-        device.maxSamples = VK_SAMPLE_COUNT_16_BIT;
-    }
-    if (counts & VK_SAMPLE_COUNT_8_BIT)
-    {
-        device.maxSamples = VK_SAMPLE_COUNT_8_BIT;
-    }
-    if (counts & VK_SAMPLE_COUNT_4_BIT)
-    {
-        device.maxSamples = VK_SAMPLE_COUNT_4_BIT;
-    }
-    if (counts & VK_SAMPLE_COUNT_2_BIT)
-    {
-        device.maxSamples = VK_SAMPLE_COUNT_2_BIT;
-    } else {
-        device.maxSamples = VK_SAMPLE_COUNT_1_BIT;
-    }
 }
 
 VkImageView SRenderManager::create_image_view(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, UInt32 mipLevels)
@@ -339,6 +304,8 @@ Void SRenderManager::shutdown()
 {
     SPDLOG_INFO("Render Manager shutdown.");
 
+    vkDestroyCommandPool(logicalDevice.get_device(), commandPool, nullptr);
+    descriptorPool.clear(logicalDevice, nullptr);
     computePipeline.clear(logicalDevice, nullptr);
     graphicsPipeline.clear(logicalDevice, nullptr);
     renderPass.clear(logicalDevice, nullptr);
@@ -350,7 +317,7 @@ Void SRenderManager::shutdown()
     }
     logicalDevice.clear(nullptr);
 
-    if constexpr (ENABLE_VALIDATION_LAYERS)
+    if constexpr (DebugMessenger::ENABLE_VALIDATION_LAYERS)
     {
         debugMessenger.clear(instance, nullptr);
     }

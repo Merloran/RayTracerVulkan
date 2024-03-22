@@ -32,6 +32,8 @@ template<typename Type>
 using Set		   = std::set<Type>;
 template<typename Type, UInt64 Count>
 using Array		   = std::array<Type, Count>;
+template<typename FirstType, typename SecondType>
+using Pair		   = std::pair<FirstType, SecondType>;
 template<typename KeyType, typename ValueType>
 using HashMap	   = std::unordered_map<KeyType, ValueType>;
 template<typename KeyType, typename ValueType>

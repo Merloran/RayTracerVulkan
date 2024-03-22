@@ -4,12 +4,13 @@
 #include "Common/logical_device.hpp"
 #include "Common/swapchain.hpp"
 #include "Common/render_pass.hpp"
-
-#include <vulkan/vulkan.h>
-
+#include "Common/descriptor_pool.hpp"
 #include "Common/pipeline.hpp"
 
+#include <vulkan/vulkan.hpp>
 
+
+struct CommandBuffer;
 template<typename Type>
 struct Handle;
 class Shader;
@@ -18,11 +19,6 @@ enum class EShaderType : UInt8;
 class SRenderManager
 {
 public:
-#ifdef NDEBUG
-	static constexpr Bool ENABLE_VALIDATION_LAYERS = false;
-#else
-	static constexpr Bool ENABLE_VALIDATION_LAYERS = true;
-#endif
 	const String SHADERS_PATH = "Resources/Shaders/";
 	const String COMPILED_SHADER_EXTENSION = ".spv";
 	const String GLSL_COMPILER_PATH = "D:/VulkanSDK/Bin/glslc.exe";
@@ -34,23 +30,23 @@ public:
 	VkImageView create_image_view(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, UInt32 mipLevels);
 	const DynamicArray<const Char*>& get_validation_layers();
 
+	Handle<Shader> load_shader(const String& filePath, const EShaderType shaderType);
+
 	[[nodiscard]]
 	const Handle<Shader>& get_shader_handle_by_name(const String& name)  const;
 	Shader& get_shader_by_name(const String& name);
 	Shader& get_shader_by_handle(const Handle<Shader> handle);
 
-	Handle<Shader> load_shader(const String& filePath, const EShaderType shaderType);
+	[[nodiscard]]
+	const Handle<CommandBuffer>& get_command_buffer_handle_by_name(const String& name)  const;
+	CommandBuffer& get_command_buffer_by_name(const String& name);
+	CommandBuffer& get_command_buffer_by_handle(const Handle<CommandBuffer> handle);
 
 	Void shutdown();
 
 private:
 	SRenderManager()  = default;
 	~SRenderManager() = default;
-
-	DynamicArray<const Char*> validationLayers =
-	{
-		"VK_LAYER_KHRONOS_validation"
-	};
 
 	VkInstance instance;
 	DebugMessenger debugMessenger;
@@ -60,22 +56,21 @@ private:
 	LogicalDevice logicalDevice;
 	Swapchain swapchain;
 	RenderPass renderPass;
+	DescriptorPool descriptorPool;
 	Pipeline graphicsPipeline;
 	Pipeline computePipeline;
-
+	VkCommandPool commandPool;
+	DynamicArray<CommandBuffer> commandBuffers;
+	HashMap<String, Handle<CommandBuffer>> nameToIdCommandBuffers;
 
 
 	Void create_vulkan_instance();
 	//TODO: Maybe move to display manager
 	DynamicArray<const Char*> get_required_extensions();
 	Void create_surface();
-
-
-	Void pick_physical_device(PhysicalDevice& selectedDevice);
-	Bool is_device_suitable(PhysicalDevice &device);
-	Void find_queue_families(PhysicalDevice &device);
-	Void has_swapchain_support(PhysicalDevice &device);
-	Void get_max_sample_count(PhysicalDevice &device);
+	Void create_command_pool(VkCommandPoolCreateFlagBits flags);
+	Void create_command_buffers(VkCommandBufferLevel level, const DynamicArray<String>& names);
+	Void setup_graphics_descriptors();
 
 	HashMap<String, Handle<Shader>> nameToIdShaders;
 	DynamicArray<Shader> shaders;

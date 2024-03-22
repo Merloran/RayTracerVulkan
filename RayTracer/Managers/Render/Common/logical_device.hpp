@@ -1,12 +1,15 @@
 #pragma once
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
-struct PhysicalDevice;
+class DebugMessenger;
+class PhysicalDevice;
 
 class LogicalDevice
 {
 public:
-    Void create(const PhysicalDevice& physicalDevice, const VkAllocationCallbacks* allocator);
+    Void create(const PhysicalDevice& physicalDevice, 
+                const DebugMessenger& debugMessenger,
+                const VkAllocationCallbacks* allocator);
 
     const VkDevice& get_device() const;
     VkSampleCountFlagBits get_samples() const;
