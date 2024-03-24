@@ -1,9 +1,9 @@
-#include "../../Display/display_manager.hpp"
-#include "../render_manager.hpp"
-//TODO: ATTENTION BUG PRONE SHIT!
 #include "swapchain.hpp"
-#include "logical_device.hpp"
+
+#include "../../Display/display_manager.hpp"
 #include "physical_device.hpp"
+#include "logical_device.hpp"
+#include "image.hpp"
 
 Void Swapchain::create(const LogicalDevice& logicalDevice, const PhysicalDevice& physicalDevice, const VkSurfaceKHR& surface, const VkAllocationCallbacks* allocator)
 {
@@ -70,15 +70,28 @@ VkFormat Swapchain::get_image_format() const
     return imageFormat;
 }
 
-Void Swapchain::create_image_views()
+const UVector2& Swapchain::get_extent() const
 {
-    //TODO: move this somewhere its bug prone
-    SRenderManager& renderManager = SRenderManager::get();
-    imageViews.reserve(imageViews.size());
+    return extent;
+}
+
+const DynamicArray<VkImageView>& Swapchain::get_image_views() const
+{
+    return imageViews;
+}
+
+Void Swapchain::create_image_views(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+{
+    imageViews.reserve(images.size());
 
     for (UInt32 i = 0; i < imageViews.size(); ++i)
     {
-        imageViews.emplace_back(renderManager.create_image_view(images[i], imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1));
+        imageViews.emplace_back(Image::s_create_view(logicalDevice, 
+													 images[i], 
+													 imageFormat, 
+													 VK_IMAGE_ASPECT_COLOR_BIT, 
+													 1, 
+													 allocator));
     }
 }
 
@@ -133,12 +146,12 @@ UVector2 Swapchain::choose_swap_extent(const VkSurfaceCapabilitiesKHR& capabilit
 
 Void Swapchain::clear(const LogicalDevice& device, const VkAllocationCallbacks* allocator)
 {
-    for (VkFramebuffer& framebuffer : framebuffers)
+    for (VkFramebuffer framebuffer : framebuffers)
     {
         vkDestroyFramebuffer(device.get_device(), framebuffer, allocator);
     }
 
-    for (VkImageView& imageView : imageViews)
+    for (VkImageView imageView : imageViews)
     {
         vkDestroyImageView(device.get_device(), imageView, allocator);
     }

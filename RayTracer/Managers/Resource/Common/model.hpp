@@ -1,7 +1,5 @@
 #pragma once
 
-template<typename Type>
-struct Handle;
 struct Mesh;
 struct Material;
 

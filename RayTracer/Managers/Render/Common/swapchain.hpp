@@ -1,8 +1,8 @@
 #pragma once
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
-struct PhysicalDevice;
-struct LogicalDevice;
+class PhysicalDevice;
+class LogicalDevice;
 
 class Swapchain
 {
@@ -14,6 +14,8 @@ public:
 
     const VkSwapchainKHR& get_swapchain();
     VkFormat get_image_format() const;
+    const UVector2& get_extent() const;
+    const DynamicArray<VkImageView>& get_image_views() const;
 
     Void clear(const LogicalDevice& device, const VkAllocationCallbacks* allocator);
 
@@ -25,7 +27,7 @@ private:
     VkFormat                    imageFormat;
     UVector2                    extent;
 
-    Void create_image_views();
+    Void create_image_views(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
     VkSurfaceFormatKHR choose_swap_surface_format(const DynamicArray<VkSurfaceFormatKHR>& availableFormats);
     VkPresentModeKHR choose_swap_present_mode(const DynamicArray<VkPresentModeKHR>& availablePresentModes);
     UVector2 choose_swap_extent(const VkSurfaceCapabilitiesKHR& capabilities);

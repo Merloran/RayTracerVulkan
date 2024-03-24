@@ -20,6 +20,8 @@ public:
     [[nodiscard]]
     const VkSurfaceCapabilitiesKHR &get_capabilities() const;
     [[nodiscard]]
+    const VkPhysicalDeviceProperties &get_properties() const;
+    [[nodiscard]]
     const DynamicArray<VkSurfaceFormatKHR> &get_formats() const;
     [[nodiscard]]
     const DynamicArray<VkPresentModeKHR> &get_present_modes() const;
@@ -31,6 +33,8 @@ public:
     VkFormat find_supported_format(const std::vector<VkFormat>& candidates,
                                    VkImageTiling tiling,
                                    VkFormatFeatureFlags features) const;
+	[[nodiscard]]
+    UInt32 find_memory_type(UInt32 typeFilter, VkMemoryPropertyFlags properties) const;
 
 private:
 	VkPhysicalDevice device;

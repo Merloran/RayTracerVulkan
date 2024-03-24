@@ -18,9 +18,9 @@ Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMess
     {
         //QUEUE CREATE INFO
         VkDeviceQueueCreateInfo queueCreateInfo{};
-        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueCreateInfo.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queueCreateInfo.queueFamilyIndex = queueFamily;
-        queueCreateInfo.queueCount = 1;
+        queueCreateInfo.queueCount       = 1;
         queueCreateInfo.pQueuePriorities = &queuePriority;
         queueCreateInfos.push_back(queueCreateInfo);
     }
@@ -55,7 +55,7 @@ Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMess
     vkGetDeviceQueue(device, physicalDevice.get_compute_family_index(), 0, &computeQueue);
 }
 
-const VkDevice& LogicalDevice::get_device() const
+VkDevice LogicalDevice::get_device() const
 {
     return device;
 }
@@ -63,6 +63,21 @@ const VkDevice& LogicalDevice::get_device() const
 VkSampleCountFlagBits LogicalDevice::get_samples() const
 {
     return samples;
+}
+
+VkQueue LogicalDevice::get_graphics_queue() const
+{
+    return graphicsQueue;
+}
+
+VkQueue LogicalDevice::get_compute_queue() const
+{
+    return computeQueue;
+}
+
+VkQueue LogicalDevice::get_present_queue() const
+{
+    return presentQueue;
 }
 
 Void LogicalDevice::clear(const VkAllocationCallbacks* allocator)

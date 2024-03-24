@@ -1,7 +1,9 @@
+
+
 #include "pipeline.hpp"
 
-#include "descriptor_pool.hpp"
 #include "logical_device.hpp"
+#include "descriptor_pool.hpp"
 #include "render_pass.hpp"
 #include "shader.hpp"
 
@@ -163,12 +165,6 @@ const VkPipeline& Pipeline::get_pipeline() const
     return pipeline;
 }
 
-Void Pipeline::clear(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
-{
-    vkDestroyPipeline(logicalDevice.get_device(), pipeline, allocator);
-    vkDestroyPipelineLayout(logicalDevice.get_device(), layout, allocator);
-}
-
 Void Pipeline::create_descriptor_set_layout_info(const DynamicArray<VkDescriptorSetLayout>& descriptorSetLayout, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
@@ -261,4 +257,10 @@ Void Pipeline::get_mesh_attribute_descriptions(DynamicArray<VkVertexInputAttribu
     uvsAttribute.location = UInt32(descriptions.size()) - 1U;
     uvsAttribute.format = VK_FORMAT_R32G32_SFLOAT;
     uvsAttribute.offset = 0;
+}
+
+Void Pipeline::clear(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+{
+    vkDestroyPipeline(logicalDevice.get_device(), pipeline, allocator);
+    vkDestroyPipelineLayout(logicalDevice.get_device(), layout, allocator);
 }

@@ -190,6 +190,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="Managers\Render\Common\buffer.cpp" />
     <ClCompile Include="Managers\Render\Common\debug_messenger.cpp" />
     <ClCompile Include="Managers\Render\Common\descriptor_pool.cpp" />
     <ClCompile Include="Managers\Render\Common\image.cpp" />
@@ -206,6 +207,7 @@
     <ClCompile Include="Managers\Display\display_manager.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Managers\Render\Common\buffer.hpp" />
     <ClInclude Include="Core\pch.hpp" />
     <ClInclude Include="Core\Utilities\types.hpp" />
     <ClInclude Include="Managers\Render\Common\command_buffer.hpp" />

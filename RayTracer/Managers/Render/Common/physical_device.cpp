@@ -63,6 +63,11 @@ const VkSurfaceCapabilitiesKHR& PhysicalDevice::get_capabilities() const
     return capabilities;
 }
 
+const VkPhysicalDeviceProperties& PhysicalDevice::get_properties() const
+{
+    return properties;
+}
+
 const DynamicArray<VkSurfaceFormatKHR>& PhysicalDevice::get_formats() const
 {
     return formats;
@@ -108,6 +113,22 @@ VkFormat PhysicalDevice::find_supported_format(const std::vector<VkFormat>& cand
     }
 
     throw std::runtime_error("failed to find supported format!");
+}
+
+UInt32 PhysicalDevice::find_memory_type(UInt32 typeFilter, VkMemoryPropertyFlags properties) const
+{
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(device, &memProperties);
+
+    for (UInt32 i = 0; i < memProperties.memoryTypeCount; ++i)
+    {
+        if (typeFilter & (1 << i) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+        {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("failed to find suitable memory type!");
 }
 
 Bool PhysicalDevice::is_device_suitable(VkSurfaceKHR surface)

@@ -1,27 +1,15 @@
 #include "render_pass.hpp"
 
+#include "../../Resource/Common/handle.hpp"
 #include "physical_device.hpp"
 #include "logical_device.hpp"
 #include "swapchain.hpp"
+#include "image.hpp"
 
 
-Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator)
+Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, Handle<Image> colorImageHandle, Handle<Image> depthImageHandle, const VkAllocationCallbacks* allocator)
 {
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format         = swapchain.get_image_format();
-    colorAttachment.samples        = logicalDevice.get_samples();
-    colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-
+    // Swapchain image
     VkAttachmentDescription colorAttachmentResolve{};
     colorAttachmentResolve.format         = swapchain.get_image_format();
     colorAttachmentResolve.samples        = VK_SAMPLE_COUNT_1_BIT;
@@ -33,8 +21,23 @@ Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevic
     colorAttachmentResolve.finalLayout    = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     VkAttachmentReference colorAttachmentResolveRef{};
-    colorAttachmentResolveRef.attachment = 1;
+    colorAttachmentResolveRef.attachment = 0;
     colorAttachmentResolveRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format         = swapchain.get_image_format();
+    colorAttachment.samples        = logicalDevice.get_samples();
+    colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference colorAttachmentRef{};
+    colorAttachmentRef.attachment = 1;
+    colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 
     VkAttachmentDescription depthAttachment{};
@@ -67,7 +70,9 @@ Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevic
     dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-    std::array<VkAttachmentDescription, 3> attachments = { colorAttachment, colorAttachmentResolve, depthAttachment };
+    Array<VkAttachmentDescription, 3> attachments = { colorAttachmentResolve, colorAttachment, depthAttachment };
+    imageOrder.emplace_back(colorImageHandle);
+    imageOrder.emplace_back(depthImageHandle);
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassInfo.attachmentCount = UInt32(attachments.size());
@@ -86,6 +91,11 @@ Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevic
 const VkRenderPass& RenderPass::get_render_pass() const
 {
     return renderPass;
+}
+
+const DynamicArray<Handle<Image>> &RenderPass::get_image_order() const
+{
+    return imageOrder;
 }
 
 

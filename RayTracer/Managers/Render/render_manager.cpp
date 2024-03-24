@@ -6,8 +6,10 @@
 
 #include "../Display/display_manager.hpp"
 #include "../Resource/Common/handle.hpp"
+#include "../Resource/Common/texture.hpp"
 #include "Common/command_buffer.hpp"
 #include "Common/shader.hpp"
+#include "Common/image.hpp"
 
 
 SRenderManager& SRenderManager::get()
@@ -35,7 +37,10 @@ Void SRenderManager::startup()
     shaders.emplace_back(get_shader_by_handle(vert));
     shaders.emplace_back(get_shader_by_handle(frag));
     swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
-    renderPass.create(physicalDevice, logicalDevice, swapchain, nullptr);
+    create_color_image();
+    create_depth_image();
+
+    renderPass.create(physicalDevice, logicalDevice, swapchain, colorImageHandle, depthImageHandle, nullptr);
     setup_graphics_descriptors();
     create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     
@@ -105,12 +110,22 @@ CommandBuffer& SRenderManager::get_command_buffer_by_name(const String& name)
 
 CommandBuffer& SRenderManager::get_command_buffer_by_handle(const Handle<CommandBuffer> handle)
 {
-    if (handle.id < 0 || handle.id >= Int32(shaders.size()))
+    if (handle.id < 0 || handle.id >= Int32(commandBuffers.size()))
     {
         SPDLOG_WARN("Command buffer {} not found, returned default.", handle.id);
         return commandBuffers[0];
     }
     return commandBuffers[handle.id];
+}
+
+Image& SRenderManager::get_image_by_handle(const Handle<Image> handle)
+{
+    if (handle.id < 0 || handle.id >= Int32(images.size()))
+    {
+        SPDLOG_WARN("Image {} not found, returned default.", handle.id);
+        return images[0];
+    }
+    return images[handle.id];
 }
 
 Handle<Shader> SRenderManager::load_shader(const String& filePath, const EShaderType shaderType)
@@ -238,6 +253,137 @@ Void SRenderManager::create_command_buffers(VkCommandBufferLevel level, const Dy
     }
 }
 
+Void SRenderManager::create_color_image()
+{
+    if (colorImageHandle.id == Handle<Image>::sNone.id)
+    {
+        colorImageHandle.id = Int32(images.size());
+        images.emplace_back();
+    }
+    Image& image = images[colorImageHandle.id];
+
+    image.create(physicalDevice,
+                 logicalDevice,
+                 swapchain.get_extent(),
+                 1,
+                 logicalDevice.get_samples(),
+                 swapchain.get_image_format(),
+                 VK_IMAGE_TILING_OPTIMAL,
+                 VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                 nullptr);
+    image.create_view(logicalDevice, VK_IMAGE_ASPECT_COLOR_BIT, nullptr);
+}
+
+Void SRenderManager::create_depth_image()
+{
+    if (depthImageHandle.id == Handle<Image>::sNone.id)
+    {
+        depthImageHandle.id = Int32(images.size());
+        images.emplace_back();
+    }
+	Image& image = images[depthImageHandle.id];
+    
+    image.create(physicalDevice,
+                 logicalDevice,
+                 swapchain.get_extent(),
+                 1,
+                 logicalDevice.get_samples(),
+                 physicalDevice.find_depth_format(),
+                 VK_IMAGE_TILING_OPTIMAL,
+                 VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                 nullptr);
+    image.create_view(logicalDevice, VK_IMAGE_ASPECT_DEPTH_BIT, nullptr);
+}
+
+Void SRenderManager::create_framebuffers()
+{
+	const DynamicArray<VkImageView>& swapchainImageViews = swapchain.get_image_views();
+    framebuffers.resize(swapchainImageViews.size());
+    const DynamicArray<Handle<Image>>& imageOrder = renderPass.get_image_order();
+    DynamicArray<VkImageView> views;
+    // 1 is for swapchain image view
+    views.resize(imageOrder.size() + 1);
+    const UVector2& extent = swapchain.get_extent();
+
+    for (UInt64 i = 1; i < imageOrder.size(); ++i)
+    {
+        views[i] = get_image_by_handle(imageOrder[i]).get_view();
+    }
+
+    for (UInt64 i = 0; i < swapchainImageViews.size(); ++i)
+    {
+        views[0] = swapchainImageViews[i];
+
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass      = renderPass.get_render_pass();
+        framebufferInfo.attachmentCount = UInt32(views.size());
+        framebufferInfo.pAttachments    = views.data();
+        framebufferInfo.width           = extent.x;
+        framebufferInfo.height          = extent.y;
+        framebufferInfo.layers          = 1;
+
+        if (vkCreateFramebuffer(logicalDevice.get_device(), &framebufferInfo, nullptr, &framebuffers[i]) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create framebuffer!");
+        }
+    }
+}
+
+Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
+{
+    Buffer stagingBuffer;
+    const UInt64 textureSize = texture.size.x * texture.size.y * texture.channels;
+    stagingBuffer.create(physicalDevice,
+                         logicalDevice,
+                         textureSize,
+                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+                         nullptr);
+
+    Void* data;
+    vkMapMemory(logicalDevice.get_device(), stagingBuffer.get_memory(), 0, textureSize, 0, &data);
+    memcpy(data, texture.data, textureSize);
+    vkUnmapMemory(logicalDevice.get_device(), stagingBuffer.get_memory());
+
+    texture.image.id = Int32(images.size());
+    Image& textureImage = images.emplace_back();
+
+    VkFormat format;
+    if (texture.channels == 3)
+    {
+        format = VK_FORMAT_R8G8B8_SRGB;
+    }
+    else if (texture.channels == 4)
+    {
+
+        format = VK_FORMAT_R8G8B8A8_SRGB;
+    }
+
+    textureImage.create(physicalDevice,
+                        logicalDevice,
+                        texture.size,
+                        mipLevels, 
+                        VK_SAMPLE_COUNT_1_BIT,
+                        VK_FORMAT_R8G8B8A8_SRGB,
+                        VK_IMAGE_TILING_OPTIMAL,
+                        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                        nullptr);
+
+    transition_image_layout(textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    copy_buffer_to_image(stagingBuffer, textureImage);
+
+    generate_mipmaps(textureImage);
+
+    textureImage.create_view(logicalDevice, VK_IMAGE_ASPECT_COLOR_BIT, nullptr);
+    textureImage.create_sampler(physicalDevice, logicalDevice, nullptr);
+
+    stagingBuffer.clear(logicalDevice, nullptr);
+}
+
 Void SRenderManager::setup_graphics_descriptors()
 {
     DynamicArray<DescriptorSetInfo> infos;
@@ -278,31 +424,289 @@ Void SRenderManager::setup_graphics_descriptors()
     
 }
 
-VkImageView SRenderManager::create_image_view(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, UInt32 mipLevels)
+Void SRenderManager::generate_mipmaps(Image& image)
 {
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = image;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = format;
-    viewInfo.subresourceRange.aspectMask = aspectFlags;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = mipLevels;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
+    // Check if image format supports linear blitting
+    VkFormatProperties formatProperties;
+    vkGetPhysicalDeviceFormatProperties(physicalDevice.get_device(), image.get_format(), &formatProperties);
 
-    VkImageView imageView;
-    if (vkCreateImageView(logicalDevice.get_device(), &viewInfo, nullptr, &imageView) != VK_SUCCESS)
+    if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
     {
-        throw std::runtime_error("failed to create texture image view!");
+        throw std::runtime_error("texture image format does not support linear blitting!");
     }
 
-    return imageView;
+    VkCommandBuffer commandBuffer;
+    begin_quick_commands(commandBuffer);
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.image                           = image.get_image();
+    barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+    barrier.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount     = 1;
+    barrier.subresourceRange.levelCount     = 1;
+
+	const UVector2 &size = image.get_size();
+    Int32 mipWidth  = size.x;
+    Int32 mipHeight = size.y;
+    const UInt32 mipLevels = UInt32(image.get_mip_levels());
+
+    for (UInt32 i = 1; i < mipLevels; ++i)
+    {
+        barrier.subresourceRange.baseMipLevel = i - 1;
+        barrier.oldLayout                     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout                     = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.srcAccessMask                 = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask                 = VK_ACCESS_TRANSFER_READ_BIT;
+
+        vkCmdPipelineBarrier(commandBuffer,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, 
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, 
+                             0,
+                             0, 
+                             nullptr,
+                             0, 
+                             nullptr,
+                             1, 
+                             &barrier);
+
+        VkImageBlit blit{};
+        blit.srcOffsets[0]                 = { 0, 0, 0 };
+        blit.srcOffsets[1]                 = { mipWidth, mipHeight, 1 };
+        blit.srcSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.srcSubresource.mipLevel       = i - 1;
+        blit.srcSubresource.baseArrayLayer = 0;
+        blit.srcSubresource.layerCount     = 1;
+        blit.dstOffsets[0]                 = { 0, 0, 0 };
+        blit.dstOffsets[1]                 = 
+        {
+        	mipWidth > 1 ? mipWidth / 2 : 1,
+        	mipHeight > 1 ? mipHeight / 2 : 1,
+        	1
+        };
+        blit.dstSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.dstSubresource.mipLevel       = i;
+        blit.dstSubresource.baseArrayLayer = 0;
+        blit.dstSubresource.layerCount     = 1;
+
+        vkCmdBlitImage(commandBuffer,
+                       image.get_image(), 
+                       VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       image.get_image(), 
+                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       1, 
+                       &blit,
+                       VK_FILTER_LINEAR);
+
+        barrier.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.newLayout     = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        vkCmdPipelineBarrier(commandBuffer,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, 
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                             0,
+                             0, 
+                             nullptr,
+                             0, 
+                             nullptr,
+                             1, 
+                             &barrier);
+
+        if (mipWidth > 1)
+        {
+            mipWidth /= 2;
+        }
+        if (mipHeight > 1)
+        {
+            mipHeight /= 2;
+        }
+
+    }
+
+    barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+    barrier.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout     = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(commandBuffer,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 
+                         0,
+                         0, 
+                         nullptr,
+                         0, 
+                         nullptr,
+                         1, 
+                         &barrier);
+
+    end_quick_commands(commandBuffer);
+}
+
+Void SRenderManager::copy_buffer_to_image(const Buffer& buffer, Image& image)
+{
+    VkCommandBuffer commandBuffer;
+    begin_quick_commands(commandBuffer);
+
+    const UVector2& size = image.get_size();
+    VkBufferImageCopy region{};
+    region.bufferOffset                    = 0;
+    region.bufferRowLength                 = 0;
+    region.bufferImageHeight               = 0;
+    region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel       = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount     = 1;
+    region.imageOffset                     = { 0, 0, 0 };
+    region.imageExtent                     = { size.x, size.y, 1 };
+
+    vkCmdCopyBufferToImage(commandBuffer,
+                           buffer.get_buffer(),
+                           image.get_image(),
+                           image.get_current_layout(),
+                           1,
+                           &region);
+
+    end_quick_commands(commandBuffer);
+}
+
+Void SRenderManager::transition_image_layout(Image& image, VkImageLayout newLayout)
+{
+    VkCommandBuffer commandBuffer;
+    begin_quick_commands(commandBuffer);
+
+    const VkImageLayout oldLayout = image.get_current_layout();
+    image.set_current_layout(newLayout);
+    VkImageMemoryBarrier barrier{};
+    barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout                       = oldLayout;
+    barrier.newLayout                       = newLayout;
+    barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image                           = image.get_image();
+
+    if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) 
+    {
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        if (has_stencil_component(image.get_format()))
+        {
+            barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        }
+    } else {
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    }
+    barrier.subresourceRange.baseMipLevel   = 0;
+    barrier.subresourceRange.levelCount     = UInt32(image.get_mip_levels());
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount     = 1;
+
+    VkPipelineStageFlags sourceStage;
+    VkPipelineStageFlags destinationStage;
+
+    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) 
+    {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    }
+    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) 
+    {
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        sourceStage      = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    }
+    else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) 
+    {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    } else {
+        throw std::invalid_argument("unsupported layout transition!");
+    }
+
+    vkCmdPipelineBarrier(commandBuffer,
+                         sourceStage,
+                         destinationStage,
+                         0,
+                         0,
+                         nullptr,
+                         0,
+                         nullptr,
+                         1,
+                         &barrier);
+
+    end_quick_commands(commandBuffer);
+}
+
+Void SRenderManager::copy_buffer(const Buffer& source, Buffer& destination)
+{
+    VkCommandBuffer commandBuffer;
+    begin_quick_commands(commandBuffer);
+
+    VkBufferCopy copyRegion{};
+    copyRegion.srcOffset = 0; // Optional
+    copyRegion.dstOffset = 0; // Optional
+    copyRegion.size      = source.get_size();
+    vkCmdCopyBuffer(commandBuffer, source.get_buffer(), destination.get_buffer(), 1, &copyRegion);
+
+    end_quick_commands(commandBuffer);
+}
+
+Void SRenderManager::begin_quick_commands(VkCommandBuffer& commandBuffer)
+{
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool        = commandPool;
+    allocInfo.commandBufferCount = 1;
+    
+    vkAllocateCommandBuffers(logicalDevice.get_device(), &allocInfo, &commandBuffer);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+}
+
+Void SRenderManager::end_quick_commands(VkCommandBuffer commandBuffer)
+{
+    vkEndCommandBuffer(commandBuffer);
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers    = &commandBuffer;
+
+    vkQueueSubmit(logicalDevice.get_graphics_queue(), 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(logicalDevice.get_graphics_queue());
+
+    vkFreeCommandBuffers(logicalDevice.get_device(), commandPool, 1, &commandBuffer);
+}
+
+Bool SRenderManager::has_stencil_component(VkFormat format)
+{
+    return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 }
 
 Void SRenderManager::shutdown()
 {
     SPDLOG_INFO("Render Manager shutdown.");
+
+    for(Image& image : images)
+    {
+        image.clear(logicalDevice, nullptr);
+    }
 
     vkDestroyCommandPool(logicalDevice.get_device(), commandPool, nullptr);
     descriptorPool.clear(logicalDevice, nullptr);

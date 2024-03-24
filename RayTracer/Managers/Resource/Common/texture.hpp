@@ -1,5 +1,7 @@
 #pragma once
 
+class Image;
+
 enum class ETextureType : Int16
 {
 	None			 = 0,
@@ -25,6 +27,7 @@ struct Texture
 	IVector2 size;
 	Int32 channels;
 	ETextureType type = ETextureType::None;
+	Handle<Image> image;
 	String name;
 	UInt8* data;
 };
