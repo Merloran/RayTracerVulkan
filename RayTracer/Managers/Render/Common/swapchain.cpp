@@ -58,6 +58,8 @@ Void Swapchain::create(const LogicalDevice& logicalDevice, const PhysicalDevice&
     images.resize(imageCount);
     vkGetSwapchainImagesKHR(logicalDevice.get_device(), swapchain, &imageCount, images.data());
     imageFormat = surfaceFormat.format;
+
+    create_image_views(logicalDevice, allocator);
 }
 
 const VkSwapchainKHR& Swapchain::get_swapchain()
@@ -84,10 +86,10 @@ Void Swapchain::create_image_views(const LogicalDevice& logicalDevice, const VkA
 {
     imageViews.reserve(images.size());
 
-    for (UInt32 i = 0; i < imageViews.size(); ++i)
+    for (const VkImage& image : images)
     {
-        imageViews.emplace_back(Image::s_create_view(logicalDevice, 
-													 images[i], 
+        imageViews.emplace_back(Image::s_create_view(logicalDevice,
+                                                     image, 
 													 imageFormat, 
 													 VK_IMAGE_ASPECT_COLOR_BIT, 
 													 1, 

@@ -7,6 +7,7 @@
 #include "../Resource/Common/handle.hpp"
 #include "../Resource/Common/texture.hpp"
 #include "../Resource/Common/mesh.hpp"
+#include "Camera/camera.hpp"
 #include "Common/command_buffer.hpp"
 #include "Common/shader.hpp"
 #include "Common/image.hpp"
@@ -41,11 +42,14 @@ Void SRenderManager::startup()
     create_color_image();
     create_depth_image();
     create_uniform_buffer();
-
-    renderPass.create(physicalDevice, logicalDevice, swapchain, colorImageHandle, depthImageHandle, nullptr);
     setup_graphics_descriptors();
+
     create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     create_command_buffers(VK_COMMAND_BUFFER_LEVEL_PRIMARY, { "Graphics1", "Graphics2" });
+
+    renderPass.create(physicalDevice, logicalDevice, swapchain, colorImageHandle, depthImageHandle, nullptr);
+    create_framebuffers();
+
 
     graphicsPipeline.create_graphics_pipeline(descriptorPool, renderPass, shaders, logicalDevice, nullptr);
     // computePipeline.create_compute_pipeline(, logicalDevice, nullptr);
@@ -157,13 +161,21 @@ Handle<Shader> SRenderManager::load_shader(const String& filePath, const EShader
     return handle;
 }
 
+Void SRenderManager::generate_mesh_buffers(DynamicArray<Mesh>& meshes)
+{
+    for (Mesh& mesh : meshes)
+    {
+        create_mesh_buffers(mesh);
+    }
+}
+
 Void SRenderManager::create_mesh_buffers(Mesh& mesh)
 {
     create_vertex_buffer(mesh);
     create_index_buffer(mesh);
 }
 
-Void SRenderManager::draw_frame(Float32 deltaTime, const DynamicArray<Mesh>& meshes)
+Void SRenderManager::draw_frame(Camera& camera, const DynamicArray<Mesh>& meshes)
 {
     UInt64 currentFrame = isFrameEven ? 1 : 0;
     vkWaitForFences(logicalDevice.get_device(), 1, &inFlightFences[currentFrame], VK_TRUE, Limits<UInt64>::max());
@@ -186,7 +198,7 @@ Void SRenderManager::draw_frame(Float32 deltaTime, const DynamicArray<Mesh>& mes
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
-    update_uniform_buffer(UInt32(currentFrame), deltaTime);
+    update_uniform_buffer(UInt32(currentFrame), camera);
 
     vkResetFences(logicalDevice.get_device(), 1, &inFlightFences[currentFrame]);
 
@@ -302,7 +314,7 @@ Void SRenderManager::create_surface()
 {
 	const SDisplayManager& displayManager = SDisplayManager::get();
 
-    if (glfwCreateWindowSurface(instance, displayManager.get_window(), nullptr, &surface) != VK_SUCCESS)
+    if (glfwCreateWindowSurface(instance, &displayManager.get_window(), nullptr, &surface) != VK_SUCCESS)
     {
         throw std::runtime_error("failed to create window surface!");
     }
@@ -323,6 +335,14 @@ Void SRenderManager::create_command_pool(VkCommandPoolCreateFlagBits flags)
 
 Void SRenderManager::create_command_buffers(VkCommandBufferLevel level, const DynamicArray<String>& names)
 {
+    for (const String& name : names)
+    {
+        const auto& iterator = nameToIdCommandBuffers.find(name);
+        if (iterator != nameToIdCommandBuffers.end())
+        {
+            SPDLOG_ERROR("Failed to create command buffers name: {} already exist.", name);
+        }
+    }
     commandBuffers.reserve(names.size());
     DynamicArray<VkCommandBuffer> buffers;
     buffers.resize(names.size());
@@ -339,6 +359,8 @@ Void SRenderManager::create_command_buffers(VkCommandBufferLevel level, const Dy
 
     for (UInt64 i = 0; i < names.size(); ++i)
     {
+	    const Handle<CommandBuffer> handle = { Int32(commandBuffers.size()) };
+        nameToIdCommandBuffers[names[i]] = handle;
         CommandBuffer& buffer = commandBuffers.emplace_back();
         buffer.buffer = buffers[i];
         buffer.name = names[i];
@@ -399,9 +421,9 @@ Void SRenderManager::create_framebuffers()
     views.resize(imageOrder.size() + 1);
     const UVector2& extent = swapchain.get_extent();
 
-    for (UInt64 i = 1; i < imageOrder.size(); ++i)
+    for (UInt64 i = 0; i < imageOrder.size(); ++i)
     {
-        views[i] = get_image_by_handle(imageOrder[i]).get_view();
+        views[i + 1] = get_image_by_handle(imageOrder[i]).get_view();
     }
 
     for (UInt64 i = 0; i < swapchainImageViews.size(); ++i)
@@ -514,8 +536,7 @@ Void SRenderManager::create_uniform_buffer()
                       VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                       nullptr);
-        Void* mappedMemory = buffer.get_mapped_memory();
-        vkMapMemory(logicalDevice.get_device(), buffer.get_memory(), 0, bufferSize, 0, &mappedMemory);
+        vkMapMemory(logicalDevice.get_device(), buffer.get_memory(), 0, bufferSize, 0, buffer.get_mapped_memory());
     }
 }
 
@@ -592,7 +613,7 @@ Void SRenderManager::setup_graphics_descriptors()
         uniform.binding = 0;
         uniform.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         uniform.descriptorCount = 1;
-        uniform.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        uniform.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
         // VkDescriptorSetLayoutBinding& image = info.bindings.emplace_back();
         // image.binding = 1;
@@ -622,7 +643,7 @@ Void SRenderManager::setup_graphics_descriptors()
     for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         setupInfos.emplace_back().resources.reserve(descriptorCount);
-
+        setupInfos[i].dataHandle = descriptorPool.get_set_data_handle_by_name("GraphicsDescriptorSet" + std::to_string(i));
         DescriptorResourceInfo& uniformBufferResource = setupInfos[i].resources.emplace_back();
         VkDescriptorBufferInfo uniformBufferInfo;
         uniformBufferInfo.buffer = uniformBuffers[i].get_buffer();
@@ -678,11 +699,15 @@ Void SRenderManager::create_synchronization_objects()
     }
 }
 
-Void SRenderManager::update_uniform_buffer(UInt32 currentImage, Float32 deltaTime)
+Void SRenderManager::update_uniform_buffer(UInt32 currentImage, Camera& camera)
 {
     UniformBufferObject ubo{};
-    ubo.deltaTime = deltaTime * 2.0f;
-    memcpy(uniformBuffers[currentImage].get_mapped_memory(), &ubo, sizeof(ubo));
+    ubo.model = FMatrix4(1.0f);
+    const FMatrix4 view = camera.get_view();
+    FMatrix4 proj = camera.get_projection(SDisplayManager::get().get_aspect_ratio());
+    proj[1][1] *= -1.0f; // Invert Y axis
+    ubo.viewProjection = proj * view;
+    memcpy(*uniformBuffers[currentImage].get_mapped_memory(), &ubo, sizeof(ubo));
 }
 
 Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32 imageIndex, const DynamicArray<Mesh>& meshes)
@@ -699,9 +724,10 @@ Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32
     }
 
     VkRenderPassBeginInfo renderPassInfo{};
-    std::array<VkClearValue, 2> clearValues{};
+    std::array<VkClearValue, 3> clearValues{};
     clearValues[0].color        = { {0.0f, 0.0f, 0.0f, 1.0f} };
-    clearValues[1].depthStencil = { 1.0f, 0 };
+    clearValues[1].color        = { {0.0f, 0.0f, 0.0f, 1.0f} };
+    clearValues[2].depthStencil = { 1.0f, 0 };
     const UVector2& extent = swapchain.get_extent();
     renderPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass        = renderPass.get_render_pass();
@@ -1066,6 +1092,8 @@ Bool SRenderManager::has_stencil_component(VkFormat format)
 
 Void SRenderManager::shutdown()
 {
+    SPDLOG_INFO("Wait until frame end...");
+    vkDeviceWaitIdle(logicalDevice.get_device());
     SPDLOG_INFO("Render Manager shutdown.");
 
     for(Image& image : images)

@@ -66,8 +66,7 @@ public:
 
 	[[nodiscard]]
 	const DynamicArray<Model>    &get_models()    const;
-	[[nodiscard]]
-	const DynamicArray<Mesh>     &get_meshes()    const;
+	DynamicArray<Mesh>&			  get_meshes();
 	[[nodiscard]]
 	const DynamicArray<Material> &get_materials() const;
 	[[nodiscard]]

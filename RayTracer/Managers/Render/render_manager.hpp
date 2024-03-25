@@ -12,6 +12,7 @@
 #include "Common/buffer.hpp"
 
 
+class Camera;
 struct Mesh;
 struct Texture;
 class Image;
@@ -24,10 +25,8 @@ enum class EShaderType : UInt8;
 
 struct UniformBufferObject
 {
-	Float32 deltaTime;
-	//glm::mat4 model;
-	//glm::mat4 view;
-	//glm::mat4 projection;
+	glm::mat4 model;
+	glm::mat4 viewProjection;
 };
 
 class SRenderManager
@@ -43,9 +42,10 @@ public:
 	Void startup();
 
 	Handle<Shader> load_shader(const String& filePath, const EShaderType shaderType);
+	Void generate_mesh_buffers(DynamicArray<Mesh>& meshes);
 	Void create_mesh_buffers(Mesh& mesh);
 
-	Void draw_frame(Float32 deltaTime, const DynamicArray<Mesh>& meshes);
+	Void draw_frame(Camera& camera, const DynamicArray<Mesh>& meshes);
 
 	[[nodiscard]]
 	const Handle<Shader>& get_shader_handle_by_name(const String& name)  const;
@@ -114,7 +114,7 @@ private:
 	Void setup_graphics_descriptors();
 	Void create_synchronization_objects();
 
-	Void update_uniform_buffer(UInt32 currentImage, Float32 deltaTime);
+	Void update_uniform_buffer(UInt32 currentImage, Camera& camera);
 	Void record_command_buffer(VkCommandBuffer commandBuffer, UInt32 imageIndex, const DynamicArray<Mesh>& meshes);
 	Void recreate_swapchain();
 

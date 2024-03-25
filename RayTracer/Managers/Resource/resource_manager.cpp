@@ -526,7 +526,7 @@ const DynamicArray<Model>& SResourceManager::get_models() const
 	return models;
 }
 
-const DynamicArray<Mesh>& SResourceManager::get_meshes() const
+DynamicArray<Mesh>& SResourceManager::get_meshes()
 {
 	return meshes;
 }

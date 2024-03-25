@@ -15,7 +15,7 @@ public:
 	[[nodiscard]]
 	Float32			get_aspect_ratio() const;
 	[[nodiscard]]
-	GLFWwindow*		get_window() const;
+	GLFWwindow&		get_window() const;
 
 
 	Void poll_events();
