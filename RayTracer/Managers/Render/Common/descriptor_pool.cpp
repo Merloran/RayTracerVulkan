@@ -23,12 +23,11 @@ Void DescriptorPool::create(const DynamicArray<DescriptorSetInfo>& infos, const 
         }
         DescriptorSetData& data = setData.emplace_back();
         data.name = info.name;
-        data.id = UInt32(i);
+        data.id   = UInt32(i);
 
-        for(UInt64 j = 0; j < info.bindings.size(); ++j)
+        for (const VkDescriptorSetLayoutBinding& binding : info.bindings)
         {
-            const VkDescriptorSetLayoutBinding& binding = info.bindings[j];
-        	VkWriteDescriptorSet& write = data.writes.emplace_back();
+	        VkWriteDescriptorSet& write = data.writes.emplace_back();
 
             write.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             write.dstBinding       = binding.binding;
@@ -81,13 +80,11 @@ Void DescriptorPool::create(const DynamicArray<DescriptorSetInfo>& infos, const 
         throw std::runtime_error("failed to create descriptor pool!");
     }
 
-
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool     = pool;
     allocInfo.descriptorSetCount = UInt32(sets.size());
     allocInfo.pSetLayouts        = layouts.data();
-    
 
     if (vkAllocateDescriptorSets(logicalDevice.get_device(), &allocInfo, sets.data()) != VK_SUCCESS)
     {
@@ -140,17 +137,29 @@ Void DescriptorPool::setup_sets(const DynamicArray<DescriptorSetupInfo>& infos, 
     {
         DescriptorSetData& data = setData[info.dataHandle.id];
 
-        for (UInt64 j = 0; j < info.resources.size(); ++j)
+        for (UInt64 i = 0; i < info.resources.size(); ++i)
         {
-            VkWriteDescriptorSet& write = data.writes[j];
-            const DescriptorResourceInfo& resource = info.resources[j];
+            VkWriteDescriptorSet& write = data.writes[i];
+            const DescriptorResourceInfo& resource = info.resources[i];
 
             write.dstSet = sets[data.id];
             if (is_resource_compatible(resource, write))
             {
-                write.pBufferInfo      = resource.bufferInfo;
-                write.pImageInfo       = resource.imageInfo;
-                write.pTexelBufferView = resource.texelBufferView;
+                if (resource.bufferInfo.has_value())
+                {
+                    write.pBufferInfo = &resource.bufferInfo.value();
+                }
+                else if (resource.imageInfo.has_value())
+                {
+                    write.pImageInfo = &resource.imageInfo.value();
+                }
+                else if (resource.texelBufferView.has_value())
+                {
+                    write.pTexelBufferView = &resource.texelBufferView.value();
+                } else {
+                    SPDLOG_ERROR("Descriptor info not set!");
+                    return;
+                }
             }
         }
 
@@ -166,12 +175,13 @@ Bool DescriptorPool::is_resource_compatible(const DescriptorResourceInfo& resour
 {
 	switch (write.descriptorType)
 	{
-		case VK_DESCRIPTOR_TYPE_SAMPLER:
+        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
 		case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
 		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
 		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+        case VK_DESCRIPTOR_TYPE_SAMPLER:
 		{
-            if (resource.imageInfo == nullptr)
+            if (!resource.imageInfo.has_value())
             {
                 return false;
             }
@@ -181,7 +191,7 @@ Bool DescriptorPool::is_resource_compatible(const DescriptorResourceInfo& resour
 		case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
 		case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
 		{
-            if (resource.texelBufferView == nullptr)
+            if (!resource.texelBufferView.has_value())
             {
                 return false;
             }
@@ -191,7 +201,7 @@ Bool DescriptorPool::is_resource_compatible(const DescriptorResourceInfo& resour
 		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
 		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
 		{
-            if (resource.bufferInfo == nullptr)
+            if (!resource.bufferInfo.has_value())
             {
                 return false;
             }

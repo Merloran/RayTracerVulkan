@@ -20,9 +20,9 @@ struct DescriptorSetData
 
 struct DescriptorResourceInfo
 {
-	VkDescriptorImageInfo* imageInfo   = nullptr;
-	VkDescriptorBufferInfo* bufferInfo = nullptr;
-	VkBufferView* texelBufferView	   = nullptr;
+	Optional<VkDescriptorImageInfo> imageInfo;
+	Optional<VkDescriptorBufferInfo> bufferInfo;
+	Optional<VkBufferView> texelBufferView;
 };
 
 struct DescriptorSetupInfo

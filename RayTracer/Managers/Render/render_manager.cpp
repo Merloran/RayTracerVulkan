@@ -7,6 +7,7 @@
 #include "../Display/display_manager.hpp"
 #include "../Resource/Common/handle.hpp"
 #include "../Resource/Common/texture.hpp"
+#include "../Resource/Common/mesh.hpp"
 #include "Common/command_buffer.hpp"
 #include "Common/shader.hpp"
 #include "Common/image.hpp"
@@ -39,6 +40,7 @@ Void SRenderManager::startup()
     swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
     create_color_image();
     create_depth_image();
+    create_uniform_buffer();
 
     renderPass.create(physicalDevice, logicalDevice, swapchain, colorImageHandle, depthImageHandle, nullptr);
     setup_graphics_descriptors();
@@ -128,6 +130,16 @@ Image& SRenderManager::get_image_by_handle(const Handle<Image> handle)
     return images[handle.id];
 }
 
+Buffer& SRenderManager::get_buffer_by_handle(const Handle<Buffer> handle)
+{
+    if (handle.id < 0 || handle.id >= Int32(buffers.size()))
+    {
+        SPDLOG_WARN("Buffer {} not found, returned default.", handle.id);
+        return buffers[0];
+    }
+    return buffers[handle.id];
+}
+
 Handle<Shader> SRenderManager::load_shader(const String& filePath, const EShaderType shaderType)
 {
     const UInt64 shaderId = shaders.size();
@@ -141,6 +153,12 @@ Handle<Shader> SRenderManager::load_shader(const String& filePath, const EShader
     nameToIdShaders[shader.get_file_path()] = handle;
 
     return handle;
+}
+
+Void SRenderManager::create_mesh_buffers(Mesh& mesh)
+{
+    create_vertex_buffer(mesh);
+    create_index_buffer(mesh);
 }
 
 Void SRenderManager::create_vulkan_instance()
@@ -332,6 +350,101 @@ Void SRenderManager::create_framebuffers()
     }
 }
 
+Void SRenderManager::create_vertex_buffer(Mesh& mesh)
+{
+	const UInt64 positionsSize = sizeof(mesh.positions[0]) * mesh.positions.size();
+	const UInt64 normalsSize   = sizeof(mesh.normals[0]) * mesh.normals.size();
+	const UInt64 uvsSize       = sizeof(mesh.uvs[0]) * mesh.uvs.size();
+	const VkDeviceSize bufferSize = positionsSize
+							      + normalsSize
+							      + uvsSize;
+
+    Buffer stagingBuffer;
+    stagingBuffer.create(physicalDevice,
+                         logicalDevice,
+                         bufferSize,
+                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         nullptr);
+
+    Void* data;
+    UInt64 offset = 0;
+    vkMapMemory(logicalDevice.get_device(), stagingBuffer.get_memory(), 0, bufferSize, 0, &data);
+    UInt8* destination = reinterpret_cast<UInt8*>(data);
+
+    memcpy(destination + offset, mesh.positions.data(), positionsSize);
+    offset += positionsSize;
+    memcpy(destination + offset, mesh.normals.data(), normalsSize);
+    offset += normalsSize;
+    memcpy(destination + offset, mesh.uvs.data(), uvsSize);
+
+    vkUnmapMemory(logicalDevice.get_device(), stagingBuffer.get_memory());
+
+    mesh.vertexesHandle.id = UInt32(buffers.size());
+    Buffer& vertexBuffer = buffers.emplace_back();
+
+    vertexBuffer.create(physicalDevice,
+                        logicalDevice,
+                        bufferSize,
+                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                        nullptr);
+
+    copy_buffer(stagingBuffer, vertexBuffer);
+
+    stagingBuffer.clear(logicalDevice, nullptr);
+}
+
+Void SRenderManager::create_index_buffer(Mesh& mesh)
+{
+    VkDeviceSize bufferSize = sizeof(mesh.indexes[0]) * mesh.indexes.size();
+
+    Buffer stagingBuffer;
+    stagingBuffer.create(physicalDevice,
+                         logicalDevice,
+                         bufferSize,
+                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         nullptr);
+
+    Void* data;
+    vkMapMemory(logicalDevice.get_device(), stagingBuffer.get_memory(), 0, bufferSize, 0, &data);
+    memcpy(data, mesh.indexes.data(), bufferSize);
+    vkUnmapMemory(logicalDevice.get_device(), stagingBuffer.get_memory());
+
+    mesh.indexesHandle.id = UInt32(buffers.size());
+    Buffer& indexBuffer = buffers.emplace_back();
+
+    indexBuffer.create(physicalDevice,
+                       logicalDevice,
+                       bufferSize,
+                       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                       nullptr);
+
+    copy_buffer(stagingBuffer, indexBuffer);
+
+    stagingBuffer.clear(logicalDevice, nullptr);
+}
+
+Void SRenderManager::create_uniform_buffer()
+{
+    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+    uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+
+    for (Buffer& buffer : uniformBuffers)
+    {
+        buffer.create(physicalDevice,
+                      logicalDevice,
+                      bufferSize,
+                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      nullptr);
+        Void* mappedMemory = buffer.get_mapped_memory();
+        vkMapMemory(logicalDevice.get_device(), buffer.get_memory(), 0, bufferSize, 0, &mappedMemory);
+    }
+}
+
 Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
 {
     Buffer stagingBuffer;
@@ -360,6 +473,9 @@ Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
     {
 
         format = VK_FORMAT_R8G8B8A8_SRGB;
+    } else {
+        SPDLOG_ERROR("Not supported channels count: {} in texture: {}", texture.channels, texture.name);
+        return;
     }
 
     textureImage.create(physicalDevice,
@@ -367,7 +483,7 @@ Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
                         texture.size,
                         mipLevels, 
                         VK_SAMPLE_COUNT_1_BIT,
-                        VK_FORMAT_R8G8B8A8_SRGB,
+                        format,
                         VK_IMAGE_TILING_OPTIMAL,
                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -376,7 +492,10 @@ Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
     transition_image_layout(textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     copy_buffer_to_image(stagingBuffer, textureImage);
 
-    generate_mipmaps(textureImage);
+    if (mipLevels > 1)
+    {
+        generate_mipmaps(textureImage);
+    }
 
     textureImage.create_view(logicalDevice, VK_IMAGE_ASPECT_COLOR_BIT, nullptr);
     textureImage.create_sampler(physicalDevice, logicalDevice, nullptr);
@@ -387,41 +506,77 @@ Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
 Void SRenderManager::setup_graphics_descriptors()
 {
     DynamicArray<DescriptorSetInfo> infos;
-    DescriptorSetInfo& info = infos.emplace_back();
-    info.name = "GraphicsDescriptorSet";
-    info.bindings.reserve(4);
-    VkDescriptorSetLayoutBinding& uniform  = info.bindings.emplace_back();
-    VkDescriptorSetLayoutBinding& image    = info.bindings.emplace_back();
-    VkDescriptorSetLayoutBinding& storage1 = info.bindings.emplace_back();
-    VkDescriptorSetLayoutBinding& storage2 = info.bindings.emplace_back();
+    infos.reserve(MAX_FRAMES_IN_FLIGHT);
+    const UInt64 descriptorCount = 1;
+    for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    {
+        DescriptorSetInfo& info = infos.emplace_back();
+        info.name = "GraphicsDescriptorSet" + std::to_string(i);
+        info.bindings.reserve(descriptorCount);
 
-    uniform.binding         = 0;
-    uniform.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uniform.descriptorCount = 1;
-    uniform.stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+        VkDescriptorSetLayoutBinding& uniform = info.bindings.emplace_back();
+        uniform.binding = 0;
+        uniform.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uniform.descriptorCount = 1;
+        uniform.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-    image.binding         = 1;
-    image.descriptorCount = 1;
-    image.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    image.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+        // VkDescriptorSetLayoutBinding& image = info.bindings.emplace_back();
+        // image.binding = 1;
+        // image.descriptorCount = 1;
+        // image.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        // image.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    storage1.binding         = 2;
-    storage1.descriptorCount = 1;
-    storage1.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    storage1.stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
-
-    storage2.binding         = 3;
-    storage2.descriptorCount = 1;
-    storage2.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    storage2.stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
-
+        // VkDescriptorSetLayoutBinding& storage1 = info.bindings.emplace_back();
+        // storage1.binding = 2;
+        // storage1.descriptorCount = 1;
+        // storage1.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        // storage1.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        //
+        // VkDescriptorSetLayoutBinding& storage2 = info.bindings.emplace_back();
+        // storage2.binding = 3;
+        // storage2.descriptorCount = 1;
+        // storage2.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        // storage2.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    
 
     descriptorPool.create(infos, logicalDevice, nullptr);
 
 
+    DynamicArray<DescriptorSetupInfo> setupInfos;
+    setupInfos.reserve(MAX_FRAMES_IN_FLIGHT);
+    for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    {
+        setupInfos.emplace_back().resources.reserve(descriptorCount);
 
-    // descriptorPool.setup_sets(infos, logicalDevice, nullptr);
-    
+        DescriptorResourceInfo& uniformBufferResource = setupInfos[i].resources.emplace_back();
+        VkDescriptorBufferInfo uniformBufferInfo;
+        uniformBufferInfo.buffer = uniformBuffers[i].get_buffer();
+        uniformBufferInfo.offset = 0;
+        uniformBufferInfo.range  = sizeof(UniformBufferObject);
+        uniformBufferResource.bufferInfo = uniformBufferInfo;
+
+        // DescriptorResourceInfo& imageResource = setupInfos[i].resources.emplace_back();
+        // VkDescriptorImageInfo imageInfo;
+        // imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        // imageInfo.imageView   = nullptr;
+        // imageInfo.sampler     = nullptr;
+        // imageResource.imageInfo = imageInfo;
+
+        //DescriptorResourceInfo& storageBuffer1Resource = setupInfos[i].resources.emplace_back();
+        //VkDescriptorBufferInfo& storageBufferInfoLastFrame = storageBuffer1Resource.bufferInfo.value();
+        //storageBufferInfoLastFrame.buffer = shaderStorageBuffers[(i - 1) % MAX_FRAMES_IN_FLIGHT];
+        //storageBufferInfoLastFrame.offset = 0;
+        //storageBufferInfoLastFrame.range  = sizeof(Particle) * PARTICLE_COUNT;
+        //
+        //DescriptorResourceInfo& storageBuffer2Resource = setupInfos[i].resources.emplace_back();
+        //VkDescriptorBufferInfo& storageBufferInfoCurrentFrame = storageBuffer2Resource.bufferInfo.value();
+        //storageBufferInfoCurrentFrame.buffer = shaderStorageBuffers[i];
+        //storageBufferInfoCurrentFrame.offset = 0;
+        //storageBufferInfoCurrentFrame.range  = sizeof(Particle) * PARTICLE_COUNT;
+    }
+
+    descriptorPool.setup_sets(setupInfos, logicalDevice);
 }
 
 Void SRenderManager::generate_mipmaps(Image& image)
@@ -706,6 +861,16 @@ Void SRenderManager::shutdown()
     for(Image& image : images)
     {
         image.clear(logicalDevice, nullptr);
+    }
+
+    for (Buffer& buffer : uniformBuffers)
+    {
+        buffer.clear(logicalDevice, nullptr);
+    }
+
+    for (Buffer& buffer : buffers)
+    {
+        buffer.clear(logicalDevice, nullptr);
     }
 
     vkDestroyCommandPool(logicalDevice.get_device(), commandPool, nullptr);

@@ -12,6 +12,7 @@
 #include "Common/buffer.hpp"
 
 
+struct Mesh;
 struct Texture;
 class Image;
 struct CommandBuffer;
@@ -20,18 +21,29 @@ struct Handle;
 class Shader;
 enum class EShaderType : UInt8;
 
+
+struct UniformBufferObject
+{
+	Float32 deltaTime;
+	//glm::mat4 model;
+	//glm::mat4 view;
+	//glm::mat4 projection;
+};
+
 class SRenderManager
 {
 public:
 	const String SHADERS_PATH = "Resources/Shaders/";
 	const String COMPILED_SHADER_EXTENSION = ".spv";
 	const String GLSL_COMPILER_PATH = "D:/VulkanSDK/Bin/glslc.exe";
+	const UInt64 MAX_FRAMES_IN_FLIGHT = 2;
 	SRenderManager(SRenderManager&) = delete;
 	static SRenderManager& get();
 
 	Void startup();
 
 	Handle<Shader> load_shader(const String& filePath, const EShaderType shaderType);
+	Void create_mesh_buffers(Mesh& mesh);
 
 	[[nodiscard]]
 	const Handle<Shader>& get_shader_handle_by_name(const String& name)  const;
@@ -44,6 +56,7 @@ public:
 	CommandBuffer& get_command_buffer_by_handle(const Handle<CommandBuffer> handle);
 
 	Image& get_image_by_handle(const Handle<Image> handle);
+	Buffer& get_buffer_by_handle(const Handle<Buffer> handle);
 
 	Void shutdown();
 
@@ -68,6 +81,8 @@ private:
 	HashMap<String, Handle<Shader>> nameToIdShaders;
 	DynamicArray<CommandBuffer> commandBuffers;
 	HashMap<String, Handle<CommandBuffer>> nameToIdCommandBuffers;
+	DynamicArray<Buffer> buffers; // Contains index and vertex data buffers for meshes
+	DynamicArray<Buffer> uniformBuffers;
 	DynamicArray<Image> images;
 	Handle<Image> colorImageHandle = Handle<Image>::sNone;
 	Handle<Image> depthImageHandle = Handle<Image>::sNone;
@@ -82,6 +97,9 @@ private:
 	Void create_color_image();
 	Void create_depth_image();
 	Void create_framebuffers();
+	Void create_vertex_buffer(Mesh& mesh);
+	Void create_index_buffer(Mesh& mesh);
+	Void create_uniform_buffer();
 	Void create_texture_image(Texture& texture, UInt32 mipLevels);
 	Void setup_graphics_descriptors();
 

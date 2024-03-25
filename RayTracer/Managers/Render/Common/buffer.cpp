@@ -38,9 +38,14 @@ VkBuffer Buffer::get_buffer() const
     return buffer;
 }
 
-VkDeviceMemory Buffer::get_memory() const
+VkDeviceMemory Buffer::get_memory()
 {
     return memory;
+}
+
+Void* Buffer::get_mapped_memory()
+{
+    return mappedMemory;
 }
 
 UInt64 Buffer::get_size() const

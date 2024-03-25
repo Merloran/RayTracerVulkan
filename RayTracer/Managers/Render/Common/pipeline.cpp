@@ -1,5 +1,3 @@
-
-
 #include "pipeline.hpp"
 
 #include "logical_device.hpp"
