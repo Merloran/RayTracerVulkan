@@ -88,6 +88,12 @@ private:
 	Handle<Image> depthImageHandle = Handle<Image>::sNone;
 	DynamicArray<VkFramebuffer> framebuffers;
 
+	//DynamicArray<VkSemaphore> computeFinishedSemaphores;
+	DynamicArray<VkSemaphore> imageAvailableSemaphores;
+	DynamicArray<VkSemaphore> renderFinishedSemaphores;
+	//DynamicArray<VkFence>     computeInFlightFences;
+	DynamicArray<VkFence>	  inFlightFences;
+
 	Void create_vulkan_instance();
 	//TODO: Maybe move to display manager
 	DynamicArray<const Char*> get_required_extensions();
@@ -102,6 +108,7 @@ private:
 	Void create_uniform_buffer();
 	Void create_texture_image(Texture& texture, UInt32 mipLevels);
 	Void setup_graphics_descriptors();
+	Void create_synchronization_objects();
 
 	Void generate_mipmaps(Image& image);
 	Void copy_buffer_to_image(const Buffer& buffer, Image& image);

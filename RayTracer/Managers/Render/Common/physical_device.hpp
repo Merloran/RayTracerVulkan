@@ -55,7 +55,7 @@ private:
     Bool is_device_suitable(VkSurfaceKHR surface);
     Void find_queue_families(VkSurfaceKHR surface);
     Void has_swapchain_support(VkSurfaceKHR surface);
-    Void get_max_sample_count();
+    Void setup_max_sample_count();
     Bool are_families_valid() const;
     Bool check_extension_support() const;
 };

@@ -16,11 +16,11 @@ Void PhysicalDevice::select_physical_device(VkInstance instance,VkSurfaceKHR sur
     vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
     for (const VkPhysicalDevice& device : devices)
     {
-        this-> device = device;
+        this->device = device;
 
         if (is_device_suitable(surface))
         {
-            get_max_sample_count();
+            setup_max_sample_count();
             break;
         }
 
@@ -212,7 +212,7 @@ Void PhysicalDevice::has_swapchain_support(VkSurfaceKHR surface)
     }
 }
 
-Void PhysicalDevice::get_max_sample_count()
+Void PhysicalDevice::setup_max_sample_count()
 {
     vkGetPhysicalDeviceProperties(device, &properties);
     VkSampleCountFlags counts = properties.limits.framebufferColorSampleCounts
@@ -227,19 +227,19 @@ Void PhysicalDevice::get_max_sample_count()
     {
         maxSamples = VK_SAMPLE_COUNT_32_BIT;
     }
-    if (counts & VK_SAMPLE_COUNT_16_BIT)
+    else if (counts & VK_SAMPLE_COUNT_16_BIT)
     {
         maxSamples = VK_SAMPLE_COUNT_16_BIT;
     }
-    if (counts & VK_SAMPLE_COUNT_8_BIT)
+    else if (counts & VK_SAMPLE_COUNT_8_BIT)
     {
         maxSamples = VK_SAMPLE_COUNT_8_BIT;
     }
-    if (counts & VK_SAMPLE_COUNT_4_BIT)
+    else if (counts & VK_SAMPLE_COUNT_4_BIT)
     {
         maxSamples = VK_SAMPLE_COUNT_4_BIT;
     }
-    if (counts & VK_SAMPLE_COUNT_2_BIT)
+    else if (counts & VK_SAMPLE_COUNT_2_BIT)
     {
         maxSamples = VK_SAMPLE_COUNT_2_BIT;
     } else {
@@ -251,7 +251,6 @@ Bool PhysicalDevice::are_families_valid() const
 {
     return computeFamily.has_value() && graphicsFamily.has_value() && presentFamily.has_value();
 }
-
 
 Bool PhysicalDevice::check_extension_support() const
 {

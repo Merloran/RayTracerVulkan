@@ -1,7 +1,6 @@
 #include "render_manager.hpp"
 
 #include <filesystem>
-#include <fstream>
 #include <GLFW/glfw3.h>
 
 #include "../Display/display_manager.hpp"
@@ -31,6 +30,7 @@ Void SRenderManager::startup()
     create_surface();
     physicalDevice.select_physical_device(instance, surface);
     logicalDevice.create(physicalDevice, debugMessenger, nullptr);
+
     //Shaders should be created after logical device
     Handle<Shader> vert = load_shader(SHADERS_PATH + "Shader.vert", EShaderType::Vertex);
     Handle<Shader> frag = load_shader(SHADERS_PATH + "Shader.frag", EShaderType::Fragment);
@@ -45,10 +45,12 @@ Void SRenderManager::startup()
     renderPass.create(physicalDevice, logicalDevice, swapchain, colorImageHandle, depthImageHandle, nullptr);
     setup_graphics_descriptors();
     create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-    
-    
+    create_command_buffers(VK_COMMAND_BUFFER_LEVEL_PRIMARY, { "Graphics1", "Graphics2" });
+
     graphicsPipeline.create_graphics_pipeline(descriptorPool, renderPass, shaders, logicalDevice, nullptr);
     // computePipeline.create_compute_pipeline(, logicalDevice, nullptr);
+
+    create_synchronization_objects();
 }
 
 const Handle<Shader>& SRenderManager::get_shader_handle_by_name(const String& name) const
@@ -579,6 +581,31 @@ Void SRenderManager::setup_graphics_descriptors()
     descriptorPool.setup_sets(setupInfos, logicalDevice);
 }
 
+Void SRenderManager::create_synchronization_objects()
+{
+    imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+    for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+        if (vkCreateSemaphore(logicalDevice.get_device(), &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
+            vkCreateSemaphore(logicalDevice.get_device(), &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
+            vkCreateFence(logicalDevice.get_device(), &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS)
+        {
+
+            throw std::runtime_error("failed to create synchronization objects for a frame!");
+        }
+    }
+}
+
 Void SRenderManager::generate_mipmaps(Image& image)
 {
     // Check if image format supports linear blitting
@@ -879,6 +906,14 @@ Void SRenderManager::shutdown()
     graphicsPipeline.clear(logicalDevice, nullptr);
     renderPass.clear(logicalDevice, nullptr);
     swapchain.clear(logicalDevice, nullptr);
+
+
+    for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    {
+        vkDestroySemaphore(logicalDevice.get_device(), renderFinishedSemaphores[i], nullptr);
+        vkDestroySemaphore(logicalDevice.get_device(), imageAvailableSemaphores[i], nullptr);
+        vkDestroyFence(logicalDevice.get_device(), inFlightFences[i], nullptr);
+    }
 
     for (Shader& shader : shaders)
     {

@@ -27,6 +27,8 @@ Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMess
 
     //PHYSICAL DEVICE FEATURES
     VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.samplerAnisotropy = VK_TRUE;
+    deviceFeatures.sampleRateShading = VK_TRUE; // enable sample shading feature for the device
 
     //DEVICE CREATE INFO
     VkDeviceCreateInfo createInfo{};
@@ -49,6 +51,7 @@ Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMess
     {
         throw std::runtime_error("failed to create logical device!");
     }
+
     samples = physicalDevice.get_max_samples();
     vkGetDeviceQueue(device, physicalDevice.get_present_family_index(), 0, &presentQueue);
     vkGetDeviceQueue(device, physicalDevice.get_graphics_family_index(), 0, &graphicsQueue);
