@@ -158,9 +158,14 @@ Void Pipeline::create_compute_pipeline(const DescriptorPool& descriptorPool, con
     
 }
 
-const VkPipeline& Pipeline::get_pipeline() const
+VkPipeline Pipeline::get_pipeline() const
 {
     return pipeline;
+}
+
+VkPipelineLayout Pipeline::get_layout() const
+{
+    return layout;
 }
 
 Void Pipeline::create_descriptor_set_layout_info(const DynamicArray<VkDescriptorSetLayout>& descriptorSetLayout, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)

@@ -20,7 +20,9 @@ public:
 								 const VkAllocationCallbacks* allocator);
 
 	[[nodiscard]]
-	const VkPipeline& get_pipeline() const;
+	VkPipeline get_pipeline() const;
+	[[nodiscard]]
+	VkPipelineLayout get_layout() const;
 
 	Void clear(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 

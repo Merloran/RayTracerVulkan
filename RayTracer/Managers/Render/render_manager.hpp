@@ -45,6 +45,8 @@ public:
 	Handle<Shader> load_shader(const String& filePath, const EShaderType shaderType);
 	Void create_mesh_buffers(Mesh& mesh);
 
+	Void draw_frame(Float32 deltaTime, const DynamicArray<Mesh>& meshes);
+
 	[[nodiscard]]
 	const Handle<Shader>& get_shader_handle_by_name(const String& name)  const;
 	Shader& get_shader_by_name(const String& name);
@@ -94,6 +96,8 @@ private:
 	//DynamicArray<VkFence>     computeInFlightFences;
 	DynamicArray<VkFence>	  inFlightFences;
 
+	Bool isFrameEven;
+
 	Void create_vulkan_instance();
 	//TODO: Maybe move to display manager
 	DynamicArray<const Char*> get_required_extensions();
@@ -109,6 +113,10 @@ private:
 	Void create_texture_image(Texture& texture, UInt32 mipLevels);
 	Void setup_graphics_descriptors();
 	Void create_synchronization_objects();
+
+	Void update_uniform_buffer(UInt32 currentImage, Float32 deltaTime);
+	Void record_command_buffer(VkCommandBuffer commandBuffer, UInt32 imageIndex, const DynamicArray<Mesh>& meshes);
+	Void recreate_swapchain();
 
 	Void generate_mipmaps(Image& image);
 	Void copy_buffer_to_image(const Buffer& buffer, Image& image);

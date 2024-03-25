@@ -126,6 +126,26 @@ DescriptorSetData& DescriptorPool::get_set_data_by_handle(const Handle<Descripto
     return setData[handle.id];
 }
 
+VkDescriptorSetLayout& DescriptorPool::get_set_layout_by_name(const String& name)
+{
+    return layouts[get_set_data_by_name(name).id];
+}
+
+VkDescriptorSetLayout& DescriptorPool::get_set_layout_by_handle(const Handle<DescriptorSetData> handle)
+{
+    return layouts[get_set_data_by_handle(handle).id];
+}
+
+VkDescriptorSet& DescriptorPool::get_set_by_name(const String& name)
+{
+    return sets[get_set_data_by_name(name).id];
+}
+
+VkDescriptorSet& DescriptorPool::get_set_by_handle(const Handle<DescriptorSetData> handle)
+{
+    return sets[get_set_data_by_handle(handle).id];
+}
+
 const DynamicArray<VkDescriptorSetLayout>& DescriptorPool::get_layouts() const
 {
     return layouts;

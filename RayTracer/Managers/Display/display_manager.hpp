@@ -22,6 +22,8 @@ public:
 	[[nodiscard]]
 	Bool should_window_close() const;
 
+	Bool was_resize_handled();
+
 	Void shutdown();
 
 private:
@@ -32,5 +34,8 @@ private:
 	GLFWwindow* window	= nullptr;
 	IVector2 windowSize	= { 1024, 768 };
 	IVector2 framebufferSize{};
+	Bool doesFramebufferResized;
+
+	static Void s_framebuffer_resize_callback(GLFWwindow* window, Int32 width, Int32 height);
 };
 

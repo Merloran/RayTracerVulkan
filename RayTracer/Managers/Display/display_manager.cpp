@@ -19,10 +19,13 @@ Void SDisplayManager::startup()
 		return;
 	}
 
+	doesFramebufferResized = false;
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
 	window = glfwCreateWindow(windowSize.x, windowSize.y, name.c_str(), nullptr, nullptr);
+	glfwSetFramebufferSizeCallback(window, s_framebuffer_resize_callback);
+	glfwSetWindowUserPointer(window, this);
 }
 
 const IVector2& SDisplayManager::get_framebuffer_size()
@@ -80,10 +83,26 @@ Bool SDisplayManager::should_window_close() const
 	return glfwWindowShouldClose(window);
 }
 
+Bool SDisplayManager::was_resize_handled()
+{
+	if (doesFramebufferResized)
+	{
+		doesFramebufferResized = false;
+		return true;
+	}
+	return false;
+}
+
 Void SDisplayManager::shutdown()
 {
 	SPDLOG_INFO("Display Manager shutdown.");
 	glfwDestroyWindow(window);
 	glfwTerminate();
 	window = nullptr;
+}
+
+Void SDisplayManager::s_framebuffer_resize_callback(GLFWwindow* window, Int32 width, Int32 height)
+{
+	SDisplayManager& displayManager = *reinterpret_cast<SDisplayManager*>(glfwGetWindowUserPointer(window));
+	displayManager.doesFramebufferResized = true;
 }

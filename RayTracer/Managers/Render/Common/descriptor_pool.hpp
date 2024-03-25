@@ -24,7 +24,7 @@ struct DescriptorResourceInfo
 	Optional<VkDescriptorBufferInfo> bufferInfo;
 	Optional<VkBufferView> texelBufferView;
 };
-
+//TODO: I don't remember why I put this handle here, think of removing it
 struct DescriptorSetupInfo
 {
 	DynamicArray<DescriptorResourceInfo> resources;
@@ -42,6 +42,10 @@ public:
 	const Handle<DescriptorSetData>& get_set_data_handle_by_name(const String& name)  const;
 	DescriptorSetData& get_set_data_by_name(const String& name);
 	DescriptorSetData& get_set_data_by_handle(const Handle<DescriptorSetData> handle);
+	VkDescriptorSetLayout& get_set_layout_by_name(const String& name);
+	VkDescriptorSetLayout& get_set_layout_by_handle(const Handle<DescriptorSetData> handle);
+	VkDescriptorSet& get_set_by_name(const String& name);
+	VkDescriptorSet& get_set_by_handle(const Handle<DescriptorSetData> handle);
 	const DynamicArray<VkDescriptorSetLayout>& get_layouts() const;
 
 	Void setup_sets(const DynamicArray<DescriptorSetupInfo>& infos, const LogicalDevice& logicalDevice);

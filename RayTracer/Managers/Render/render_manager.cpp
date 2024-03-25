@@ -21,7 +21,7 @@ SRenderManager& SRenderManager::get()
 Void SRenderManager::startup()
 {
 	SPDLOG_INFO("Render Manager startup.");
-
+    isFrameEven = false;
     create_vulkan_instance();
     if constexpr (DebugMessenger::ENABLE_VALIDATION_LAYERS)
     {
@@ -161,6 +161,78 @@ Void SRenderManager::create_mesh_buffers(Mesh& mesh)
 {
     create_vertex_buffer(mesh);
     create_index_buffer(mesh);
+}
+
+Void SRenderManager::draw_frame(Float32 deltaTime, const DynamicArray<Mesh>& meshes)
+{
+    UInt64 currentFrame = isFrameEven ? 1 : 0;
+    vkWaitForFences(logicalDevice.get_device(), 1, &inFlightFences[currentFrame], VK_TRUE, Limits<UInt64>::max());
+
+    UInt32 imageIndex;
+    VkResult result = vkAcquireNextImageKHR(logicalDevice.get_device(),
+                                            swapchain.get_swapchain(),
+                                            Limits<UInt64>::max(),
+                                            imageAvailableSemaphores[currentFrame],
+                                            VK_NULL_HANDLE,
+                                            &imageIndex);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        recreate_swapchain();
+        return;
+    }
+    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+    {
+        throw std::runtime_error("failed to acquire swap chain image!");
+    }
+
+    update_uniform_buffer(UInt32(currentFrame), deltaTime);
+
+    vkResetFences(logicalDevice.get_device(), 1, &inFlightFences[currentFrame]);
+
+    VkCommandBuffer currentBuffer = get_command_buffer_by_name("Graphics" + std::to_string(currentFrame + 1)).buffer;
+    vkResetCommandBuffer(currentBuffer, 0);
+    record_command_buffer(currentBuffer, imageIndex, meshes);
+
+    VkSubmitInfo submitInfo{};
+    VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
+    VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
+    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+    submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.waitSemaphoreCount   = 1;
+    submitInfo.pWaitSemaphores      = waitSemaphores;
+    submitInfo.pWaitDstStageMask    = waitStages;
+    submitInfo.commandBufferCount   = 1;
+    submitInfo.pCommandBuffers      = &currentBuffer;
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores    = signalSemaphores;
+
+    if (vkQueueSubmit(logicalDevice.get_graphics_queue(), 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to submit draw command buffer!");
+    }
+
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores    = signalSemaphores;
+    presentInfo.swapchainCount     = 1;
+    presentInfo.pSwapchains        = &swapchain.get_swapchain();
+    presentInfo.pImageIndices      = &imageIndex;
+    presentInfo.pResults           = nullptr; // Optional
+
+    result = vkQueuePresentKHR(logicalDevice.get_present_queue(), &presentInfo);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || SDisplayManager::get().was_resize_handled())
+    {
+        recreate_swapchain();
+    }
+    else if (result != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to present swap chain image!");
+    }
+
+    isFrameEven = !isFrameEven;
 }
 
 Void SRenderManager::create_vulkan_instance()
@@ -604,6 +676,117 @@ Void SRenderManager::create_synchronization_objects()
             throw std::runtime_error("failed to create synchronization objects for a frame!");
         }
     }
+}
+
+Void SRenderManager::update_uniform_buffer(UInt32 currentImage, Float32 deltaTime)
+{
+    UniformBufferObject ubo{};
+    ubo.deltaTime = deltaTime * 2.0f;
+    memcpy(uniformBuffers[currentImage].get_mapped_memory(), &ubo, sizeof(ubo));
+}
+
+Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32 imageIndex, const DynamicArray<Mesh>& meshes)
+{
+    UInt64 currentFrame = isFrameEven ? 1 : 0;
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags            = 0; // Optional
+    beginInfo.pInheritanceInfo = nullptr; // Optional
+
+    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to begin recording command buffer!");
+    }
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    std::array<VkClearValue, 2> clearValues{};
+    clearValues[0].color        = { {0.0f, 0.0f, 0.0f, 1.0f} };
+    clearValues[1].depthStencil = { 1.0f, 0 };
+    const UVector2& extent = swapchain.get_extent();
+    renderPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass        = renderPass.get_render_pass();
+    renderPassInfo.framebuffer       = framebuffers[imageIndex];
+    renderPassInfo.renderArea.offset = { 0, 0 };
+    renderPassInfo.renderArea.extent = VkExtent2D{ extent.x, extent.y };
+    renderPassInfo.clearValueCount   = UInt32(clearValues.size());
+    renderPassInfo.pClearValues      = clearValues.data();
+
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline.get_pipeline());
+
+    VkViewport viewport{};
+    viewport.x        = 0.0f;
+    viewport.y        = 0.0f;
+    viewport.width    = Float32(extent.x);
+    viewport.height   = Float32(extent.y);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = { 0, 0 };
+    scissor.extent = { extent.x, extent.y };
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    VkDescriptorSet set = descriptorPool.get_set_by_name("GraphicsDescriptorSet" + std::to_string(currentFrame));
+    vkCmdBindDescriptorSets(commandBuffer,
+                            VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            graphicsPipeline.get_layout(),
+                            0,
+                            1,
+                            &set,
+                            0,
+                            nullptr);
+
+    for (const Mesh& mesh : meshes)
+    {
+        const VkBuffer vertexBuffer = get_buffer_by_handle(mesh.vertexesHandle).get_buffer();
+        const VkBuffer indexBuffer = get_buffer_by_handle(mesh.indexesHandle).get_buffer();
+        const UInt64 normalsOffset = mesh.positions.size() * sizeof(mesh.positions[0]);
+        const UInt64 uvsOffset = normalsOffset + mesh.normals.size() * sizeof(mesh.normals[0]);
+        Array<VkBuffer, 3> vertexBuffers = { vertexBuffer, vertexBuffer, vertexBuffer };
+        Array<VkDeviceSize, 3> offsets = { 0, normalsOffset, uvsOffset };
+        vkCmdBindVertexBuffers(commandBuffer, 0, 3, vertexBuffers.data(), offsets.data());
+        vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+
+        vkCmdDrawIndexed(commandBuffer,
+                         UInt32(mesh.indexes.size()),
+                         1,
+                         0,
+                         0,
+                         0);
+    }
+
+    vkCmdEndRenderPass(commandBuffer);
+
+    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to record command buffer!");
+    }
+}
+
+Void SRenderManager::recreate_swapchain()
+{
+    SDisplayManager& displayManager = SDisplayManager::get();
+    IVector2 windowSize = displayManager.get_framebuffer_size();
+    while (windowSize.x < 1 || windowSize.y < 1)
+    {
+        windowSize = displayManager.get_framebuffer_size();
+        glfwWaitEvents();
+    }
+
+    vkDeviceWaitIdle(logicalDevice.get_device());
+
+    swapchain.clear(logicalDevice, nullptr);
+    get_image_by_handle(colorImageHandle).clear(logicalDevice, nullptr);
+    get_image_by_handle(depthImageHandle).clear(logicalDevice, nullptr);
+
+    swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
+    create_color_image();
+    create_depth_image();
+    create_framebuffers();
 }
 
 Void SRenderManager::generate_mipmaps(Image& image)
