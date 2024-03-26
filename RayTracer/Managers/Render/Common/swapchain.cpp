@@ -4,12 +4,13 @@
 #include "physical_device.hpp"
 #include "logical_device.hpp"
 #include "image.hpp"
+#include "render_pass.hpp"
 
 Void Swapchain::create(const LogicalDevice& logicalDevice, const PhysicalDevice& physicalDevice, const VkSurfaceKHR& surface, const VkAllocationCallbacks* allocator)
 {
-    const VkSurfaceCapabilitiesKHR& capabilities = physicalDevice.get_capabilities();
-    VkSurfaceFormatKHR surfaceFormat = choose_swap_surface_format(physicalDevice.get_formats());
-    VkPresentModeKHR   presentMode   = choose_swap_present_mode(physicalDevice.get_present_modes());
+    const VkSurfaceCapabilitiesKHR& capabilities = physicalDevice.get_capabilities(surface);
+    VkSurfaceFormatKHR surfaceFormat = choose_swap_surface_format(physicalDevice.get_formats(surface));
+    VkPresentModeKHR   presentMode   = choose_swap_present_mode(physicalDevice.get_present_modes(surface));
     extent                           = choose_swap_extent(capabilities);
     UInt32             imageCount    = capabilities.minImageCount + 1;
 
@@ -62,6 +63,49 @@ Void Swapchain::create(const LogicalDevice& logicalDevice, const PhysicalDevice&
     create_image_views(logicalDevice, allocator);
 }
 
+Void Swapchain::create_framebuffers(const LogicalDevice& logicalDevice, const RenderPass& renderPass, const VkAllocationCallbacks* allocator)
+{
+    framebuffers.resize(imageViews.size());
+    const DynamicArray<Image>& renderPassImages = renderPass.get_images();
+    DynamicArray<VkImageView> views;
+    // 1 is for swapchain image view
+    views.resize(renderPassImages.size() + 1);
+
+    for (UInt64 i = 0; i < renderPassImages.size(); ++i)
+    {
+        views[i + 1] = renderPassImages[i].get_view();
+    }
+
+    for (UInt64 i = 0; i < imageViews.size(); ++i)
+    {
+        views[0] = imageViews[i];
+
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = renderPass.get_render_pass();
+        framebufferInfo.attachmentCount = UInt32(views.size());
+        framebufferInfo.pAttachments = views.data();
+        framebufferInfo.width = extent.x;
+        framebufferInfo.height = extent.y;
+        framebufferInfo.layers = 1;
+
+        if (vkCreateFramebuffer(logicalDevice.get_device(), &framebufferInfo, allocator, &framebuffers[i]) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create framebuffer!");
+        }
+    }
+}
+
+VkFramebuffer Swapchain::get_framebuffer(UInt64 number) const
+{
+    if (number < 0 || number > framebuffers.size())
+    {
+        SPDLOG_ERROR("Failed to get framebuffer {} is out of bounds, returned nullptr", number);
+        return nullptr;
+    }
+    return framebuffers[number];
+}
+
 const VkSwapchainKHR& Swapchain::get_swapchain()
 {
     return swapchain;
@@ -84,16 +128,16 @@ const DynamicArray<VkImageView>& Swapchain::get_image_views() const
 
 Void Swapchain::create_image_views(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
-    imageViews.reserve(images.size());
+    imageViews.resize(images.size());
 
-    for (const VkImage& image : images)
+    for (UInt64 i = 0; i < imageViews.size(); ++i)
     {
-        imageViews.emplace_back(Image::s_create_view(logicalDevice,
-                                                     image, 
-													 imageFormat, 
-													 VK_IMAGE_ASPECT_COLOR_BIT, 
-													 1, 
-													 allocator));
+        imageViews[i] = Image::s_create_view(logicalDevice,
+                                             images[i],
+											 imageFormat, 
+											 VK_IMAGE_ASPECT_COLOR_BIT, 
+											 1, 
+											 allocator);
     }
 }
 

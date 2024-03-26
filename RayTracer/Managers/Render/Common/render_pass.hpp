@@ -14,17 +14,33 @@ public:
 	Void create(const PhysicalDevice& physicalDevice,
 				const LogicalDevice& logicalDevice,
 				const Swapchain& swapchain,
-				Handle<Image> colorImageHandle,
-				Handle<Image> depthImageHandle,
 				const VkAllocationCallbacks* allocator);
 
-	const VkRenderPass &get_render_pass() const;
-	const DynamicArray<Handle<Image>> &get_image_order() const;
+	Void create_images(const PhysicalDevice& physicalDevice,
+					   const LogicalDevice& logicalDevice,
+					   const Swapchain& swapchain,
+					   const VkAllocationCallbacks* allocator);
 
+	Void create_color_image(const PhysicalDevice& physicalDevice, 
+							const LogicalDevice& logicalDevice, 
+							const Swapchain& swapchain, 
+							const VkAllocationCallbacks* allocator);
+
+	Void create_depth_image(const PhysicalDevice& physicalDevice, 
+							const LogicalDevice& logicalDevice, 
+							const Swapchain& swapchain, 
+							const VkAllocationCallbacks* allocator);
+
+	[[nodiscard]]
+	const VkRenderPass &get_render_pass() const;
+	[[nodiscard]]
+	const DynamicArray<Image>& get_images() const;
+
+	Void clear_images(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 	Void clear(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 
 private:
 	VkRenderPass renderPass;
-	DynamicArray<Handle<Image>> imageOrder;
+	DynamicArray<Image> images;
 };
 

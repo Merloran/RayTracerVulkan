@@ -86,9 +86,6 @@ private:
 	DynamicArray<Buffer> buffers; // Contains index and vertex data buffers for meshes
 	DynamicArray<Buffer> uniformBuffers;
 	DynamicArray<Image> images;
-	Handle<Image> colorImageHandle = Handle<Image>::sNone;
-	Handle<Image> depthImageHandle = Handle<Image>::sNone;
-	DynamicArray<VkFramebuffer> framebuffers;
 
 	//DynamicArray<VkSemaphore> computeFinishedSemaphores;
 	DynamicArray<VkSemaphore> imageAvailableSemaphores;
@@ -104,9 +101,6 @@ private:
 	Void create_surface();
 	Void create_command_pool(VkCommandPoolCreateFlagBits flags);
 	Void create_command_buffers(VkCommandBufferLevel level, const DynamicArray<String>& names);
-	Void create_color_image();
-	Void create_depth_image();
-	Void create_framebuffers();
 	Void create_vertex_buffer(Mesh& mesh);
 	Void create_index_buffer(Mesh& mesh);
 	Void create_uniform_buffer();

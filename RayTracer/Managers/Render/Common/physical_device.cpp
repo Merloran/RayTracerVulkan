@@ -14,7 +14,7 @@ Void PhysicalDevice::select_physical_device(VkInstance instance,VkSurfaceKHR sur
     // Check for device that is suitable
     DynamicArray<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
-    for (const VkPhysicalDevice& device : devices)
+    for (VkPhysicalDevice device : devices)
     {
         this->device = device;
 
@@ -58,8 +58,10 @@ VkSampleCountFlagBits PhysicalDevice::get_max_samples() const
     return maxSamples;
 }
 
-const VkSurfaceCapabilitiesKHR& PhysicalDevice::get_capabilities() const
+VkSurfaceCapabilitiesKHR PhysicalDevice::get_capabilities(VkSurfaceKHR surface) const
 {
+    VkSurfaceCapabilitiesKHR capabilities;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &capabilities);
     return capabilities;
 }
 
@@ -68,13 +70,35 @@ const VkPhysicalDeviceProperties& PhysicalDevice::get_properties() const
     return properties;
 }
 
-const DynamicArray<VkSurfaceFormatKHR>& PhysicalDevice::get_formats() const
+DynamicArray<VkSurfaceFormatKHR> PhysicalDevice::get_formats(VkSurfaceKHR surface) const
 {
+    UInt32 formatCount;
+    DynamicArray<VkSurfaceFormatKHR> formats;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
+
+    if (formatCount != 0)
+    {
+        formats.resize(formatCount);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, formats.data());
+    }
+
     return formats;
 }
 
-const DynamicArray<VkPresentModeKHR>& PhysicalDevice::get_present_modes() const
+DynamicArray<VkPresentModeKHR> PhysicalDevice::get_present_modes(VkSurfaceKHR surface) const
 {
+    DynamicArray<VkPresentModeKHR> presentModes;
+    UInt32 presentModeCount;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(device,
+                                              surface,
+                                              &presentModeCount,
+                                              nullptr);
+    if (presentModeCount != 0)
+    {
+        presentModes.resize(presentModeCount);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, presentModes.data());
+    }
+
     return presentModes;
 }
 
@@ -138,8 +162,7 @@ Bool PhysicalDevice::is_device_suitable(VkSurfaceKHR surface)
     Bool isSwapChainAdequate = false;
     if (check_extension_support())
     {
-        has_swapchain_support(surface);
-        isSwapChainAdequate = !formats.empty() && !presentModes.empty();
+        isSwapChainAdequate = !get_formats(surface).empty() && !get_present_modes(surface).empty();
     }
 
     vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
@@ -177,38 +200,6 @@ Void PhysicalDevice::find_queue_families(VkSurfaceKHR surface)
         {
             break;
         }
-    }
-}
-
-Void PhysicalDevice::has_swapchain_support(VkSurfaceKHR surface)
-{
-    UInt32 formatCount;
-    UInt32 presentModeCount;
-
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &capabilities);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
-
-    if (formatCount != 0)
-    {
-        formats.resize(formatCount);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(device,
-                                             surface,
-                                             &formatCount,
-                                             formats.data());
-    }
-
-    vkGetPhysicalDeviceSurfacePresentModesKHR(device,
-                                              surface,
-                                              &presentModeCount,
-                                              nullptr);
-
-    if (presentModeCount != 0)
-    {
-        presentModes.resize(presentModeCount);
-        vkGetPhysicalDeviceSurfacePresentModesKHR(device,
-                                                  surface,
-                                                  &presentModeCount,
-                                                  presentModes.data());
     }
 }
 

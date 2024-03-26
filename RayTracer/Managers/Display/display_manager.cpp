@@ -21,7 +21,7 @@ Void SDisplayManager::startup()
 
 	doesFramebufferResized = false;
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
 	window = glfwCreateWindow(windowSize.x, windowSize.y, name.c_str(), nullptr, nullptr);
 	glfwSetFramebufferSizeCallback(window, s_framebuffer_resize_callback);

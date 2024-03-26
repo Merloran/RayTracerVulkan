@@ -39,17 +39,14 @@ Void SRenderManager::startup()
     shaders.emplace_back(get_shader_by_handle(vert));
     shaders.emplace_back(get_shader_by_handle(frag));
     swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
-    create_color_image();
-    create_depth_image();
     create_uniform_buffer();
     setup_graphics_descriptors();
 
     create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     create_command_buffers(VK_COMMAND_BUFFER_LEVEL_PRIMARY, { "Graphics1", "Graphics2" });
 
-    renderPass.create(physicalDevice, logicalDevice, swapchain, colorImageHandle, depthImageHandle, nullptr);
-    create_framebuffers();
-
+    renderPass.create(physicalDevice, logicalDevice, swapchain, nullptr);
+    swapchain.create_framebuffers(logicalDevice, renderPass, nullptr);
 
     graphicsPipeline.create_graphics_pipeline(descriptorPool, renderPass, shaders, logicalDevice, nullptr);
     // computePipeline.create_compute_pipeline(, logicalDevice, nullptr);
@@ -367,85 +364,6 @@ Void SRenderManager::create_command_buffers(VkCommandBufferLevel level, const Dy
     }
 }
 
-Void SRenderManager::create_color_image()
-{
-    if (colorImageHandle.id == Handle<Image>::sNone.id)
-    {
-        colorImageHandle.id = Int32(images.size());
-        images.emplace_back();
-    }
-    Image& image = images[colorImageHandle.id];
-
-    image.create(physicalDevice,
-                 logicalDevice,
-                 swapchain.get_extent(),
-                 1,
-                 logicalDevice.get_samples(),
-                 swapchain.get_image_format(),
-                 VK_IMAGE_TILING_OPTIMAL,
-                 VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                 nullptr);
-    image.create_view(logicalDevice, VK_IMAGE_ASPECT_COLOR_BIT, nullptr);
-}
-
-Void SRenderManager::create_depth_image()
-{
-    if (depthImageHandle.id == Handle<Image>::sNone.id)
-    {
-        depthImageHandle.id = Int32(images.size());
-        images.emplace_back();
-    }
-	Image& image = images[depthImageHandle.id];
-    
-    image.create(physicalDevice,
-                 logicalDevice,
-                 swapchain.get_extent(),
-                 1,
-                 logicalDevice.get_samples(),
-                 physicalDevice.find_depth_format(),
-                 VK_IMAGE_TILING_OPTIMAL,
-                 VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                 nullptr);
-    image.create_view(logicalDevice, VK_IMAGE_ASPECT_DEPTH_BIT, nullptr);
-}
-
-Void SRenderManager::create_framebuffers()
-{
-	const DynamicArray<VkImageView>& swapchainImageViews = swapchain.get_image_views();
-    framebuffers.resize(swapchainImageViews.size());
-    const DynamicArray<Handle<Image>>& imageOrder = renderPass.get_image_order();
-    DynamicArray<VkImageView> views;
-    // 1 is for swapchain image view
-    views.resize(imageOrder.size() + 1);
-    const UVector2& extent = swapchain.get_extent();
-
-    for (UInt64 i = 0; i < imageOrder.size(); ++i)
-    {
-        views[i + 1] = get_image_by_handle(imageOrder[i]).get_view();
-    }
-
-    for (UInt64 i = 0; i < swapchainImageViews.size(); ++i)
-    {
-        views[0] = swapchainImageViews[i];
-
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass      = renderPass.get_render_pass();
-        framebufferInfo.attachmentCount = UInt32(views.size());
-        framebufferInfo.pAttachments    = views.data();
-        framebufferInfo.width           = extent.x;
-        framebufferInfo.height          = extent.y;
-        framebufferInfo.layers          = 1;
-
-        if (vkCreateFramebuffer(logicalDevice.get_device(), &framebufferInfo, nullptr, &framebuffers[i]) != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to create framebuffer!");
-        }
-    }
-}
-
 Void SRenderManager::create_vertex_buffer(Mesh& mesh)
 {
 	const UInt64 positionsSize = sizeof(mesh.positions[0]) * mesh.positions.size();
@@ -610,10 +528,10 @@ Void SRenderManager::setup_graphics_descriptors()
         info.bindings.reserve(descriptorCount);
 
         VkDescriptorSetLayoutBinding& uniform = info.bindings.emplace_back();
-        uniform.binding = 0;
-        uniform.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uniform.binding         = 0;
+        uniform.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         uniform.descriptorCount = 1;
-        uniform.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        uniform.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT;
 
         // VkDescriptorSetLayoutBinding& image = info.bindings.emplace_back();
         // image.binding = 1;
@@ -646,9 +564,9 @@ Void SRenderManager::setup_graphics_descriptors()
         setupInfos[i].dataHandle = descriptorPool.get_set_data_handle_by_name("GraphicsDescriptorSet" + std::to_string(i));
         DescriptorResourceInfo& uniformBufferResource = setupInfos[i].resources.emplace_back();
         VkDescriptorBufferInfo uniformBufferInfo;
-        uniformBufferInfo.buffer = uniformBuffers[i].get_buffer();
-        uniformBufferInfo.offset = 0;
-        uniformBufferInfo.range  = sizeof(UniformBufferObject);
+        uniformBufferInfo.buffer         = uniformBuffers[i].get_buffer();
+        uniformBufferInfo.offset         = 0;
+        uniformBufferInfo.range          = sizeof(UniformBufferObject);
         uniformBufferResource.bufferInfo = uniformBufferInfo;
 
         // DescriptorResourceInfo& imageResource = setupInfos[i].resources.emplace_back();
@@ -731,7 +649,7 @@ Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32
     const UVector2& extent = swapchain.get_extent();
     renderPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass        = renderPass.get_render_pass();
-    renderPassInfo.framebuffer       = framebuffers[imageIndex];
+    renderPassInfo.framebuffer       = swapchain.get_framebuffer(imageIndex);
     renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = VkExtent2D{ extent.x, extent.y };
     renderPassInfo.clearValueCount   = UInt32(clearValues.size());
@@ -806,13 +724,11 @@ Void SRenderManager::recreate_swapchain()
     vkDeviceWaitIdle(logicalDevice.get_device());
 
     swapchain.clear(logicalDevice, nullptr);
-    get_image_by_handle(colorImageHandle).clear(logicalDevice, nullptr);
-    get_image_by_handle(depthImageHandle).clear(logicalDevice, nullptr);
+    renderPass.clear_images(logicalDevice, nullptr);
 
     swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
-    create_color_image();
-    create_depth_image();
-    create_framebuffers();
+    renderPass.create_images(physicalDevice, logicalDevice, swapchain, nullptr);
+    swapchain.create_framebuffers(logicalDevice, renderPass, nullptr);
 }
 
 Void SRenderManager::generate_mipmaps(Image& image)
@@ -1095,6 +1011,7 @@ Void SRenderManager::shutdown()
     SPDLOG_INFO("Wait until frame end...");
     vkDeviceWaitIdle(logicalDevice.get_device());
     SPDLOG_INFO("Render Manager shutdown.");
+
 
     for(Image& image : images)
     {

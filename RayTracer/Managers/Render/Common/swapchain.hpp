@@ -1,6 +1,7 @@
 #pragma once
 #include <vulkan/vulkan.hpp>
 
+class RenderPass;
 class PhysicalDevice;
 class LogicalDevice;
 
@@ -12,6 +13,11 @@ public:
                 const VkSurfaceKHR& surface,
                 const VkAllocationCallbacks* allocator);
 
+    Void create_framebuffers(const LogicalDevice& logicalDevice,
+							 const RenderPass& renderPass,
+							 const VkAllocationCallbacks* allocator);
+
+    VkFramebuffer get_framebuffer(UInt64 number) const;
     const VkSwapchainKHR& get_swapchain();
     VkFormat get_image_format() const;
     const UVector2& get_extent() const;
@@ -28,6 +34,7 @@ private:
     UVector2                    extent;
 
     Void create_image_views(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
+
     VkSurfaceFormatKHR choose_swap_surface_format(const DynamicArray<VkSurfaceFormatKHR>& availableFormats);
     VkPresentModeKHR choose_swap_present_mode(const DynamicArray<VkPresentModeKHR>& availablePresentModes);
     UVector2 choose_swap_extent(const VkSurfaceCapabilitiesKHR& capabilities);

@@ -18,13 +18,13 @@ public:
     [[nodiscard]]
     VkSampleCountFlagBits get_max_samples() const;
     [[nodiscard]]
-    const VkSurfaceCapabilitiesKHR &get_capabilities() const;
+    VkSurfaceCapabilitiesKHR get_capabilities(VkSurfaceKHR surface) const;
     [[nodiscard]]
     const VkPhysicalDeviceProperties &get_properties() const;
     [[nodiscard]]
-    const DynamicArray<VkSurfaceFormatKHR> &get_formats() const;
+    DynamicArray<VkSurfaceFormatKHR> get_formats(VkSurfaceKHR surface) const;
     [[nodiscard]]
-    const DynamicArray<VkPresentModeKHR> &get_present_modes() const;
+    DynamicArray<VkPresentModeKHR> get_present_modes(VkSurfaceKHR surface) const;
     [[nodiscard]]
     const DynamicArray<const Char*> &get_device_extensions() const;
     [[nodiscard]]
@@ -39,14 +39,11 @@ public:
 private:
 	VkPhysicalDevice device;
     VkSampleCountFlagBits maxSamples;
-    VkSurfaceCapabilitiesKHR capabilities;
     VkPhysicalDeviceFeatures supportedFeatures;
     VkPhysicalDeviceProperties properties;
     Optional<UInt32> computeFamily;
     Optional<UInt32> graphicsFamily;
     Optional<UInt32> presentFamily;
-    DynamicArray<VkSurfaceFormatKHR> formats;
-    DynamicArray<VkPresentModeKHR> presentModes;
     const DynamicArray<const Char*> deviceExtensions =
     {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
