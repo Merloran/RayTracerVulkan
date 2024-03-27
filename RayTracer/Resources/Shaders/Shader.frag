@@ -1,17 +1,25 @@
 #version 460
-layout (location = 0) out vec4 color;
-
-//uniform sampler2D Albedo;
 
 layout (location = 0) in vec3 worldNormal;  
 layout (location = 1) in vec3 worldPosition;  
 layout (location = 2) in vec2 uvFragment;
 
+layout( push_constant ) uniform PushConstants
+{
+	mat4 model;
+	uint albedoId;
+	uint metallnessId;
+	uint roughnessId;
+	uint emissionId;
+} constants;
+
+layout (location = 0) out vec4 color;
+
 void main()
 {
 	const vec3 lightColor = vec3(1.0f, 1.0f, 1.0f);
 	const vec3 lightPosition = vec3(10.0f, 50.0f, 10.0f);
-	vec4 objectColor = vec4(uvFragment, 0.0f, 1.0f);//texture(Albedo, uvFragment);
+	vec4 objectColor = vec4(uvFragment, float(constants.albedoId), 1.0f);//texture(Albedo, uvFragment);
 	if (objectColor.w < 0.1f)
 	{
 		discard;

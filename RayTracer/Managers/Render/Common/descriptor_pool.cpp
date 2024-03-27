@@ -92,6 +92,52 @@ Void DescriptorPool::create(const DynamicArray<DescriptorSetInfo>& infos, const 
     }
 }
 
+Void DescriptorPool::setup_sets(const DynamicArray<DescriptorSetupInfo>& infos, const LogicalDevice& logicalDevice)
+{
+    for (const DescriptorSetupInfo& info : infos)
+    {
+        DescriptorSetData& data = setData[info.dataHandle.id];
+
+        for (UInt64 i = 0; i < info.resources.size(); ++i)
+        {
+            VkWriteDescriptorSet& write = data.writes[i];
+            const DescriptorResourceInfo& resource = info.resources[i];
+
+            write.dstSet = sets[data.id];
+            if (is_resource_compatible(resource, write))
+            {
+                if (resource.bufferInfo.has_value())
+                {
+                    write.pBufferInfo = &resource.bufferInfo.value();
+                }
+                else if (resource.imageInfo.has_value())
+                {
+                    write.pImageInfo = &resource.imageInfo.value();
+                }
+                else if (resource.texelBufferView.has_value())
+                {
+                    write.pTexelBufferView = &resource.texelBufferView.value();
+                }
+                else {
+                    SPDLOG_ERROR("Descriptor info not set!");
+                    return;
+                }
+            }
+        }
+
+        vkUpdateDescriptorSets(logicalDevice.get_device(),
+                               UInt32(data.writes.size()),
+                               data.writes.data(),
+                               0,
+                               nullptr);
+    }
+}
+
+Void DescriptorPool::setup_push_constants(const DynamicArray<VkPushConstantRange>& pushConstants)
+{
+    this->pushConstants = pushConstants;
+}
+
 const Handle<DescriptorSetData>& DescriptorPool::get_set_data_handle_by_name(const String& name) const
 {
     const auto& iterator = nameToIdSetData.find(name);
@@ -151,44 +197,9 @@ const DynamicArray<VkDescriptorSetLayout>& DescriptorPool::get_layouts() const
     return layouts;
 }
 
-Void DescriptorPool::setup_sets(const DynamicArray<DescriptorSetupInfo>& infos, const LogicalDevice& logicalDevice)
+const DynamicArray<VkPushConstantRange>& DescriptorPool::get_push_constants() const
 {
-    for (const DescriptorSetupInfo& info : infos)
-    {
-        DescriptorSetData& data = setData[info.dataHandle.id];
-
-        for (UInt64 i = 0; i < info.resources.size(); ++i)
-        {
-            VkWriteDescriptorSet& write = data.writes[i];
-            const DescriptorResourceInfo& resource = info.resources[i];
-
-            write.dstSet = sets[data.id];
-            if (is_resource_compatible(resource, write))
-            {
-                if (resource.bufferInfo.has_value())
-                {
-                    write.pBufferInfo = &resource.bufferInfo.value();
-                }
-                else if (resource.imageInfo.has_value())
-                {
-                    write.pImageInfo = &resource.imageInfo.value();
-                }
-                else if (resource.texelBufferView.has_value())
-                {
-                    write.pTexelBufferView = &resource.texelBufferView.value();
-                } else {
-                    SPDLOG_ERROR("Descriptor info not set!");
-                    return;
-                }
-            }
-        }
-
-        vkUpdateDescriptorSets(logicalDevice.get_device(),
-                               UInt32(data.writes.size()),
-                               data.writes.data(),
-                               0,
-                               nullptr);
-    }
+    return pushConstants;
 }
 
 Bool DescriptorPool::is_resource_compatible(const DescriptorResourceInfo& resource, const VkWriteDescriptorSet& write) const

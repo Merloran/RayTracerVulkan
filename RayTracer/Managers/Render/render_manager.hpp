@@ -13,6 +13,7 @@
 
 
 class Camera;
+struct Model;
 struct Mesh;
 struct Texture;
 class Image;
@@ -25,8 +26,16 @@ enum class EShaderType : UInt8;
 
 struct UniformBufferObject
 {
-	glm::mat4 model;
-	glm::mat4 viewProjection;
+	FMatrix4 viewProjection;
+};
+
+struct MeshPushConstant
+{
+	FMatrix4 model;
+	UInt32 albedoId;
+	UInt32 metallnessId;
+	UInt32 roughnessId;
+	UInt32 emissionId;
 };
 
 class SRenderManager
@@ -45,7 +54,7 @@ public:
 	Void generate_mesh_buffers(DynamicArray<Mesh>& meshes);
 	Void create_mesh_buffers(Mesh& mesh);
 
-	Void draw_frame(Camera& camera, const DynamicArray<Mesh>& meshes);
+	Void draw_frame(Camera& camera, const DynamicArray<Model>& models);
 
 	[[nodiscard]]
 	const Handle<Shader>& get_shader_handle_by_name(const String& name)  const;
@@ -109,7 +118,7 @@ private:
 	Void create_synchronization_objects();
 
 	Void update_uniform_buffer(UInt32 currentImage, Camera& camera);
-	Void record_command_buffer(VkCommandBuffer commandBuffer, UInt32 imageIndex, const DynamicArray<Mesh>& meshes);
+	Void record_command_buffer(VkCommandBuffer commandBuffer, UInt32 imageIndex, const DynamicArray<Model>& models);
 	Void recreate_swapchain();
 
 	Void generate_mipmaps(Image& image);

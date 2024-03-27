@@ -38,7 +38,8 @@ private:
 	Void get_mesh_binding_descriptions(DynamicArray<VkVertexInputBindingDescription>& descriptions);
 	Void get_mesh_attribute_descriptions(DynamicArray<VkVertexInputAttributeDescription>& descriptions);
 	
-	Void create_descriptor_set_layout_info(const DynamicArray<VkDescriptorSetLayout>& descriptorSetLayout,
+	Void create_descriptor_set_layout_info(const DynamicArray<VkDescriptorSetLayout>& descriptorSetLayouts,
+										   const DynamicArray<VkPushConstantRange>& pushConstants,
 										   const LogicalDevice& logicalDevice,
 										   const VkAllocationCallbacks* allocator);
 	Bool create_shader_stage_info(const Shader& shader, VkPipelineShaderStageCreateInfo& info);

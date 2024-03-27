@@ -4,9 +4,12 @@
 #include <GLFW/glfw3.h>
 
 #include "../Display/display_manager.hpp"
+#include "../Resource/resource_manager.hpp"
 #include "../Resource/Common/handle.hpp"
+#include "../Resource/Common/material.hpp"
 #include "../Resource/Common/texture.hpp"
 #include "../Resource/Common/mesh.hpp"
+#include "../Resource/Common/model.hpp"
 #include "Camera/camera.hpp"
 #include "Common/command_buffer.hpp"
 #include "Common/shader.hpp"
@@ -172,7 +175,7 @@ Void SRenderManager::create_mesh_buffers(Mesh& mesh)
     create_index_buffer(mesh);
 }
 
-Void SRenderManager::draw_frame(Camera& camera, const DynamicArray<Mesh>& meshes)
+Void SRenderManager::draw_frame(Camera& camera, const DynamicArray<Model>& models)
 {
     UInt64 currentFrame = isFrameEven ? 1 : 0;
     vkWaitForFences(logicalDevice.get_device(), 1, &inFlightFences[currentFrame], VK_TRUE, Limits<UInt64>::max());
@@ -201,7 +204,7 @@ Void SRenderManager::draw_frame(Camera& camera, const DynamicArray<Mesh>& meshes
 
     VkCommandBuffer currentBuffer = get_command_buffer_by_name("Graphics" + std::to_string(currentFrame + 1)).buffer;
     vkResetCommandBuffer(currentBuffer, 0);
-    record_command_buffer(currentBuffer, imageIndex, meshes);
+    record_command_buffer(currentBuffer, imageIndex, models);
 
     VkSubmitInfo submitInfo{};
     VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
@@ -590,6 +593,14 @@ Void SRenderManager::setup_graphics_descriptors()
     }
 
     descriptorPool.setup_sets(setupInfos, logicalDevice);
+
+    DynamicArray<VkPushConstantRange> pushConstants;
+    VkPushConstantRange& pushConstant = pushConstants.emplace_back();
+    pushConstant.size = sizeof(MeshPushConstant);
+    pushConstant.offset = 0;
+    pushConstant.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
+
+    descriptorPool.setup_push_constants(pushConstants);
 }
 
 Void SRenderManager::create_synchronization_objects()
@@ -620,7 +631,6 @@ Void SRenderManager::create_synchronization_objects()
 Void SRenderManager::update_uniform_buffer(UInt32 currentImage, Camera& camera)
 {
     UniformBufferObject ubo{};
-    ubo.model = FMatrix4(1.0f);
     const FMatrix4 view = camera.get_view();
     FMatrix4 proj = camera.get_projection(SDisplayManager::get().get_aspect_ratio());
     proj[1][1] *= -1.0f; // Invert Y axis
@@ -628,7 +638,7 @@ Void SRenderManager::update_uniform_buffer(UInt32 currentImage, Camera& camera)
     memcpy(*uniformBuffers[currentImage].get_mapped_memory(), &ubo, sizeof(ubo));
 }
 
-Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32 imageIndex, const DynamicArray<Mesh>& meshes)
+Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32 imageIndex, const DynamicArray<Model>& models)
 {
     UInt64 currentFrame = isFrameEven ? 1 : 0;
     VkCommandBufferBeginInfo beginInfo{};
@@ -682,25 +692,41 @@ Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32
                             &set,
                             0,
                             nullptr);
-
-    for (const Mesh& mesh : meshes)
+    SResourceManager& resourceManager = SResourceManager::get();
+    for (const Model& model : models)
     {
-        const VkBuffer vertexBuffer = get_buffer_by_handle(mesh.vertexesHandle).get_buffer();
-        const VkBuffer indexBuffer = get_buffer_by_handle(mesh.indexesHandle).get_buffer();
-        const UInt64 normalsOffset = mesh.positions.size() * sizeof(mesh.positions[0]);
-        const UInt64 uvsOffset = normalsOffset + mesh.normals.size() * sizeof(mesh.normals[0]);
-        Array<VkBuffer, 3> vertexBuffers = { vertexBuffer, vertexBuffer, vertexBuffer };
-        Array<VkDeviceSize, 3> offsets = { 0, normalsOffset, uvsOffset };
-        vkCmdBindVertexBuffers(commandBuffer, 0, 3, vertexBuffers.data(), offsets.data());
-        vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        for (UInt64 i = 0; i < model.meshes.size(); ++i)
+        {
+            const Mesh& mesh = resourceManager.get_mesh_by_handle(model.meshes[i]);
+            const Material& material = resourceManager.get_material_by_handle(model.materials[i]);
 
+            const VkBuffer vertexBuffer = get_buffer_by_handle(mesh.vertexesHandle).get_buffer();
+            const VkBuffer indexBuffer = get_buffer_by_handle(mesh.indexesHandle).get_buffer();
+            const UInt64 normalsOffset = mesh.positions.size() * sizeof(mesh.positions[0]);
+            const UInt64 uvsOffset = normalsOffset + mesh.normals.size() * sizeof(mesh.normals[0]);
+            Array<VkBuffer, 3> vertexBuffers = { vertexBuffer, vertexBuffer, vertexBuffer };
+            Array<VkDeviceSize, 3> offsets = { 0, normalsOffset, uvsOffset };
+            vkCmdBindVertexBuffers(commandBuffer, 0, 3, vertexBuffers.data(), offsets.data());
+            vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-        vkCmdDrawIndexed(commandBuffer,
-                         UInt32(mesh.indexes.size()),
-                         1,
-                         0,
-                         0,
-                         0);
+            MeshPushConstant pc;
+            pc.model = FMatrix4(1.0f);
+            pc.albedoId = material.textures[UInt64(ETextureType::Albedo)].id;
+
+            vkCmdPushConstants(commandBuffer,
+                               graphicsPipeline.get_layout(),
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0,
+                               sizeof(MeshPushConstant),
+                               &pc);
+
+            vkCmdDrawIndexed(commandBuffer,
+                             UInt32(mesh.indexes.size()),
+                             1,
+                             0,
+                             0,
+                             0);
+        }
     }
 
     vkCmdEndRenderPass(commandBuffer);

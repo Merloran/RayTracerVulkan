@@ -30,7 +30,7 @@ Int32 main()
 		displayManager.poll_events();
 		camera.catch_input(deltaTimeMs);
 
-		renderManager.draw_frame(camera, resourceManager.get_meshes());
+		renderManager.draw_frame(camera, resourceManager.get_models());
 	}
 
 	renderManager.shutdown();

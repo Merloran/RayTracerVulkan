@@ -38,6 +38,10 @@ public:
 				const LogicalDevice& logicalDevice, 
 				const VkAllocationCallbacks* allocator);
 
+	Void setup_sets(const DynamicArray<DescriptorSetupInfo>& infos, const LogicalDevice& logicalDevice);
+
+	Void setup_push_constants(const DynamicArray<VkPushConstantRange> &pushConstants);
+
 	[[nodiscard]]
 	const Handle<DescriptorSetData>& get_set_data_handle_by_name(const String& name)  const;
 	DescriptorSetData& get_set_data_by_name(const String& name);
@@ -47,8 +51,8 @@ public:
 	VkDescriptorSet& get_set_by_name(const String& name);
 	VkDescriptorSet& get_set_by_handle(const Handle<DescriptorSetData> handle);
 	const DynamicArray<VkDescriptorSetLayout>& get_layouts() const;
+	const DynamicArray<VkPushConstantRange>& get_push_constants() const;
 
-	Void setup_sets(const DynamicArray<DescriptorSetupInfo>& infos, const LogicalDevice& logicalDevice);
 
 	Void clear(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 
@@ -58,6 +62,7 @@ private:
 	HashMap<String, Handle<DescriptorSetData>> nameToIdSetData;
 	DynamicArray<DescriptorSetData> setData;
 	DynamicArray<VkDescriptorSetLayout> layouts;
+	DynamicArray<VkPushConstantRange> pushConstants;
 	DynamicArray<VkDescriptorSet> sets;
 
 	Bool is_resource_compatible(const DescriptorResourceInfo& resource, const VkWriteDescriptorSet& write) const;

@@ -364,3 +364,6 @@ FodyWeavers.xsd
 
 # ASSETS
 Assets/
+
+# Compiled Shaders
+*.spv

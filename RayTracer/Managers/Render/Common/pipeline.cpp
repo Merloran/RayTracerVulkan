@@ -10,7 +10,7 @@
 
 Void Pipeline::create_graphics_pipeline(const DescriptorPool& descriptorPool, const RenderPass& renderPass, const DynamicArray<Shader>& shaders, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
-    create_descriptor_set_layout_info(descriptorPool.get_layouts(), logicalDevice, allocator);
+    create_descriptor_set_layout_info(descriptorPool.get_layouts(), descriptorPool.get_push_constants(), logicalDevice, allocator);
 
     DynamicArray<VkPipelineShaderStageCreateInfo> shaderStageInfos;
     shaderStageInfos.reserve(shaders.size());
@@ -135,7 +135,7 @@ Void Pipeline::create_graphics_pipeline(const DescriptorPool& descriptorPool, co
 
 Void Pipeline::create_compute_pipeline(const DescriptorPool& descriptorPool, const Shader& shader, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
-    create_descriptor_set_layout_info(descriptorPool.get_layouts(), logicalDevice, allocator);
+    create_descriptor_set_layout_info(descriptorPool.get_layouts(), descriptorPool.get_push_constants(), logicalDevice, allocator);
 
     VkPipelineShaderStageCreateInfo shaderStageInfo;
     const Bool isValid = create_shader_stage_info(shader, shaderStageInfo);
@@ -168,14 +168,14 @@ VkPipelineLayout Pipeline::get_layout() const
     return layout;
 }
 
-Void Pipeline::create_descriptor_set_layout_info(const DynamicArray<VkDescriptorSetLayout>& descriptorSetLayout, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+Void Pipeline::create_descriptor_set_layout_info(const DynamicArray<VkDescriptorSetLayout>& descriptorSetLayout, const DynamicArray<VkPushConstantRange>& pushConstants, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount         = UInt32(descriptorSetLayout.size());
     pipelineLayoutInfo.pSetLayouts            = descriptorSetLayout.data();
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
-    pipelineLayoutInfo.pPushConstantRanges    = nullptr;
+    pipelineLayoutInfo.pushConstantRangeCount = UInt32(pushConstants.size());
+    pipelineLayoutInfo.pPushConstantRanges    = pushConstants.data();
 
     if (vkCreatePipelineLayout(logicalDevice.get_device(), &pipelineLayoutInfo, allocator, &layout) != VK_SUCCESS)
     {
@@ -208,10 +208,9 @@ Bool Pipeline::create_shader_stage_info(const Shader& shader, VkPipelineShaderSt
             info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
             break;
         }
-	    case EShaderType::None:
 	    default:
 	    {
-            SPDLOG_ERROR("Unsupported shader type {} in shader {}", 
+            SPDLOG_ERROR("Not supported shader type {} in shader {}", 
 						 magic_enum::enum_name(shader.get_type()), shader.get_name());
             return false;
 	    }
