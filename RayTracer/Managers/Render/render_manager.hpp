@@ -27,6 +27,7 @@ enum class EShaderType : UInt8;
 struct UniformBufferObject
 {
 	FMatrix4 viewProjection;
+	Float32 time;
 };
 
 struct MeshPushConstant
@@ -53,8 +54,12 @@ public:
 	Handle<Shader> load_shader(const String& filePath, const EShaderType shaderType);
 	Void generate_mesh_buffers(DynamicArray<Mesh>& meshes);
 	Void create_mesh_buffers(Mesh& mesh);
+	Void generate_texture_images(DynamicArray<Texture>& textures);
+	Void create_texture_image(Texture& texture, UInt32 mipLevels = 1);
+	Void setup_graphics_descriptors(const DynamicArray<Texture>& textures);
 
-	Void draw_frame(Camera& camera, const DynamicArray<Model>& models);
+	Void pre_render();
+	Void render(Camera& camera, const DynamicArray<Model>& models, Float32 time);
 
 	[[nodiscard]]
 	const Handle<Shader>& get_shader_handle_by_name(const String& name)  const;
@@ -113,11 +118,10 @@ private:
 	Void create_vertex_buffer(Mesh& mesh);
 	Void create_index_buffer(Mesh& mesh);
 	Void create_uniform_buffer();
-	Void create_texture_image(Texture& texture, UInt32 mipLevels);
-	Void setup_graphics_descriptors();
+	Void create_graphics_descriptors();
 	Void create_synchronization_objects();
 
-	Void update_uniform_buffer(UInt32 currentImage, Camera& camera);
+	Void update_uniform_buffer(UInt32 currentImage, Camera& camera, Float32 time);
 	Void record_command_buffer(VkCommandBuffer commandBuffer, UInt32 imageIndex, const DynamicArray<Model>& models);
 	Void recreate_swapchain();
 

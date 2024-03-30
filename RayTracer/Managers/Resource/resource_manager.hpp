@@ -69,8 +69,7 @@ public:
 	DynamicArray<Mesh>&			  get_meshes();
 	[[nodiscard]]
 	const DynamicArray<Material> &get_materials() const;
-	[[nodiscard]]
-	const DynamicArray<Texture>  &get_textures()  const;
+	DynamicArray<Texture>  &get_textures();
 
 	Void shutdown();
 

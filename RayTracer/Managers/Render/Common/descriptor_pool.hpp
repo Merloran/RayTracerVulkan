@@ -8,6 +8,10 @@ class LogicalDevice;
 struct DescriptorSetInfo
 {
 	DynamicArray<VkDescriptorSetLayoutBinding> bindings;
+	DynamicArray<VkDescriptorBindingFlags> bindingFlags;
+	VkDescriptorSetLayoutCreateFlags layoutFlags;
+	VkDescriptorPoolCreateFlags poolFlags;
+	UInt32 count;
 	String name;
 };
 
@@ -20,11 +24,11 @@ struct DescriptorSetData
 
 struct DescriptorResourceInfo
 {
-	Optional<VkDescriptorImageInfo> imageInfo;
-	Optional<VkDescriptorBufferInfo> bufferInfo;
-	Optional<VkBufferView> texelBufferView;
+	DynamicArray<VkDescriptorImageInfo> imageInfos;
+	DynamicArray<VkDescriptorBufferInfo> bufferInfos;
+	DynamicArray<VkBufferView> texelBufferViews;
 };
-//TODO: I don't remember why I put this handle here, think of removing it
+
 struct DescriptorSetupInfo
 {
 	DynamicArray<DescriptorResourceInfo> resources;

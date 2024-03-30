@@ -29,6 +29,7 @@ public:
 	VkImage get_image() const;
 	VkFormat get_format() const;
 	VkImageView get_view() const;
+	VkSampler get_sampler() const;
 	UInt64 get_mip_levels() const;
 	const UVector2& get_size() const;
 	VkImageLayout get_current_layout() const;

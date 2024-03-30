@@ -43,7 +43,7 @@ Void SRenderManager::startup()
     shaders.emplace_back(get_shader_by_handle(frag));
     swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
     create_uniform_buffer();
-    setup_graphics_descriptors();
+    create_graphics_descriptors();
 
     create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     create_command_buffers(VK_COMMAND_BUFFER_LEVEL_PRIMARY, { "Graphics1", "Graphics2" });
@@ -96,7 +96,7 @@ const Handle<CommandBuffer>& SRenderManager::get_command_buffer_handle_by_name(c
     const auto& iterator = nameToIdCommandBuffers.find(name);
     if (iterator == nameToIdCommandBuffers.end() || iterator->second.id < 0)
     {
-        SPDLOG_WARN("Command buffer handle {} not found, returned None.", name);
+        SPDLOG_ERROR("Command buffer handle {} not found, returned None.", name);
         return Handle<CommandBuffer>::sNone;
     }
 
@@ -109,7 +109,7 @@ CommandBuffer& SRenderManager::get_command_buffer_by_name(const String& name)
     if (iterator == nameToIdCommandBuffers.end() || iterator->second.id < 0 || 
         iterator->second.id >= Int32(commandBuffers.size()))
     {
-        SPDLOG_WARN("Command buffer {} not found, returned default.", name);
+        SPDLOG_ERROR("Command buffer {} not found, returned default.", name);
         return commandBuffers[0];
     }
 
@@ -130,7 +130,7 @@ Image& SRenderManager::get_image_by_handle(const Handle<Image> handle)
 {
     if (handle.id < 0 || handle.id >= Int32(images.size()))
     {
-        SPDLOG_WARN("Image {} not found, returned default.", handle.id);
+        SPDLOG_ERROR("Image {} not found, returned default.", handle.id);
         return images[0];
     }
     return images[handle.id];
@@ -140,7 +140,7 @@ Buffer& SRenderManager::get_buffer_by_handle(const Handle<Buffer> handle)
 {
     if (handle.id < 0 || handle.id >= Int32(buffers.size()))
     {
-        SPDLOG_WARN("Buffer {} not found, returned default.", handle.id);
+        SPDLOG_ERROR("Buffer {} not found, returned default.", handle.id);
         return buffers[0];
     }
     return buffers[handle.id];
@@ -175,7 +175,151 @@ Void SRenderManager::create_mesh_buffers(Mesh& mesh)
     create_index_buffer(mesh);
 }
 
-Void SRenderManager::draw_frame(Camera& camera, const DynamicArray<Model>& models)
+Void SRenderManager::generate_texture_images(DynamicArray<Texture>& textures)
+{
+    for (Texture& texture : textures)
+    {
+        UInt32 mipLevel = UInt32(std::floor(std::log2(std::max(texture.size.x, texture.size.y)))) + 1;
+        create_texture_image(texture, mipLevel);
+    }
+}
+
+Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
+{
+    Buffer stagingBuffer{};
+    const UInt64 textureSize = UInt64(texture.size.x * texture.size.y * texture.channels);
+    stagingBuffer.create(physicalDevice,
+                         logicalDevice,
+                         textureSize,
+                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                         nullptr);
+
+    Void* data;
+    vkMapMemory(logicalDevice.get_device(), stagingBuffer.get_memory(), 0, textureSize, 0, &data);
+    memcpy(data, texture.data, textureSize);
+    vkUnmapMemory(logicalDevice.get_device(), stagingBuffer.get_memory());
+
+    texture.image.id = Int32(images.size());
+    Image& textureImage = images.emplace_back();
+
+    VkFormat format;
+    if (texture.channels == 3)
+    {
+        format = VK_FORMAT_R8G8B8_SRGB;
+    }
+    else if (texture.channels == 4)
+    {
+
+        format = VK_FORMAT_R8G8B8A8_SRGB;
+    }
+    else {
+        SPDLOG_ERROR("Not supported channels count: {} in texture: {}", texture.channels, texture.name);
+        return;
+    }
+
+    textureImage.create(physicalDevice,
+                        logicalDevice,
+                        texture.size,
+                        mipLevels,
+                        VK_SAMPLE_COUNT_1_BIT,
+                        format,
+                        VK_IMAGE_TILING_OPTIMAL,
+                        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                        nullptr);
+
+    transition_image_layout(textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    copy_buffer_to_image(stagingBuffer, textureImage);
+
+    if (mipLevels > 1)
+    {
+        generate_mipmaps(textureImage);
+    }
+
+    textureImage.create_view(logicalDevice, VK_IMAGE_ASPECT_COLOR_BIT, nullptr);
+    textureImage.create_sampler(physicalDevice, logicalDevice, nullptr);
+
+    stagingBuffer.clear(logicalDevice, nullptr);
+}
+
+Void SRenderManager::setup_graphics_descriptors(const DynamicArray<Texture>& textures)
+{
+    DynamicArray<DescriptorSetupInfo> setupInfos;
+    setupInfos.reserve(MAX_FRAMES_IN_FLIGHT);
+    for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    {
+        DescriptorSetupInfo& setupInfo = setupInfos.emplace_back();
+        setupInfo.dataHandle = descriptorPool.get_set_data_handle_by_name("GraphicsDescriptorSet" + std::to_string(i));
+        DynamicArray<VkDescriptorBufferInfo>& bufferInfos = setupInfo.resources.emplace_back().bufferInfos;
+        VkDescriptorBufferInfo& uniformBufferInfo = bufferInfos.emplace_back();
+        uniformBufferInfo.buffer = uniformBuffers[i].get_buffer();
+        uniformBufferInfo.offset = 0;
+        uniformBufferInfo.range  = sizeof(UniformBufferObject);
+    }
+
+
+    DescriptorSetupInfo& setupInfo = setupInfos.emplace_back();
+    setupInfo.dataHandle = descriptorPool.get_set_data_handle_by_name("Textures");
+    DynamicArray<VkDescriptorImageInfo>& imageInfos = setupInfo.resources.emplace_back().imageInfos;
+    imageInfos.reserve(textures.size());
+    for (const Texture& texture : textures)
+    {
+        Image& image = get_image_by_handle(texture.image);
+        VkDescriptorImageInfo& imageInfo = imageInfos.emplace_back();
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView   = image.get_view();
+        imageInfo.sampler     = image.get_sampler();
+    }
+
+    descriptorPool.setup_sets(setupInfos, logicalDevice);
+}
+
+Void SRenderManager::pre_render()
+{
+    UInt64 currentFrame = isFrameEven ? 1 : 0;
+
+    VkCommandBuffer currentBuffer = get_command_buffer_by_name("Graphics" + std::to_string(currentFrame + 1)).buffer;
+    
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags            = 0; // Optional
+    beginInfo.pInheritanceInfo = nullptr; // Optional
+
+    if (vkBeginCommandBuffer(currentBuffer, &beginInfo) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to begin recording command buffer!");
+    }
+
+    vkCmdBindPipeline(currentBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline.get_pipeline());
+
+    const VkDescriptorSet textureSet = descriptorPool.get_set_by_name("Textures");
+    vkCmdBindDescriptorSets(currentBuffer,
+                            VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            graphicsPipeline.get_layout(),
+                            2,
+                            1,
+                            &textureSet,
+                            0,
+                            nullptr);
+
+    if (vkEndCommandBuffer(currentBuffer) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to record command buffer!");
+    }
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers    = &currentBuffer;
+
+    if (vkQueueSubmit(logicalDevice.get_graphics_queue(), 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
+    {
+        throw std::runtime_error("failed to submit draw command buffer!");
+    }
+}
+
+Void SRenderManager::render(Camera& camera, const DynamicArray<Model>& models, Float32 time)
 {
     UInt64 currentFrame = isFrameEven ? 1 : 0;
     vkWaitForFences(logicalDevice.get_device(), 1, &inFlightFences[currentFrame], VK_TRUE, Limits<UInt64>::max());
@@ -198,7 +342,7 @@ Void SRenderManager::draw_frame(Camera& camera, const DynamicArray<Model>& model
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
-    update_uniform_buffer(UInt32(currentFrame), camera);
+    update_uniform_buffer(UInt32(currentFrame), camera, time);
 
     vkResetFences(logicalDevice.get_device(), 1, &inFlightFences[currentFrame]);
 
@@ -207,17 +351,17 @@ Void SRenderManager::draw_frame(Camera& camera, const DynamicArray<Model>& model
     record_command_buffer(currentBuffer, imageIndex, models);
 
     VkSubmitInfo submitInfo{};
-    VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
-    VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
-    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+    Array<VkSemaphore, 1> waitSemaphores = { imageAvailableSemaphores[currentFrame] };
+    Array<VkSemaphore, 1> signalSemaphores = { renderFinishedSemaphores[currentFrame] };
+    Array<VkPipelineStageFlags, 1> waitStages = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
     submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount   = 1;
-    submitInfo.pWaitSemaphores      = waitSemaphores;
-    submitInfo.pWaitDstStageMask    = waitStages;
+    submitInfo.waitSemaphoreCount   = UInt32(waitSemaphores.size());
+    submitInfo.pWaitSemaphores      = waitSemaphores.data();
+    submitInfo.pWaitDstStageMask    = waitStages.data();
     submitInfo.commandBufferCount   = 1;
     submitInfo.pCommandBuffers      = &currentBuffer;
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores    = signalSemaphores;
+    submitInfo.signalSemaphoreCount = UInt32(signalSemaphores.size());
+    submitInfo.pSignalSemaphores    = signalSemaphores.data();
 
     if (vkQueueSubmit(logicalDevice.get_graphics_queue(), 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS)
     {
@@ -226,8 +370,8 @@ Void SRenderManager::draw_frame(Camera& camera, const DynamicArray<Model>& model
 
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores    = signalSemaphores;
+    presentInfo.waitSemaphoreCount = UInt32(signalSemaphores.size());
+    presentInfo.pWaitSemaphores    = signalSemaphores.data();
     presentInfo.swapchainCount     = 1;
     presentInfo.pSwapchains        = &swapchain.get_swapchain();
     presentInfo.pImageIndices      = &imageIndex;
@@ -461,74 +605,17 @@ Void SRenderManager::create_uniform_buffer()
     }
 }
 
-Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
-{
-    Buffer stagingBuffer;
-    const UInt64 textureSize = texture.size.x * texture.size.y * texture.channels;
-    stagingBuffer.create(physicalDevice,
-                         logicalDevice,
-                         textureSize,
-                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
-                         nullptr);
-
-    Void* data;
-    vkMapMemory(logicalDevice.get_device(), stagingBuffer.get_memory(), 0, textureSize, 0, &data);
-    memcpy(data, texture.data, textureSize);
-    vkUnmapMemory(logicalDevice.get_device(), stagingBuffer.get_memory());
-
-    texture.image.id = Int32(images.size());
-    Image& textureImage = images.emplace_back();
-
-    VkFormat format;
-    if (texture.channels == 3)
-    {
-        format = VK_FORMAT_R8G8B8_SRGB;
-    }
-    else if (texture.channels == 4)
-    {
-
-        format = VK_FORMAT_R8G8B8A8_SRGB;
-    } else {
-        SPDLOG_ERROR("Not supported channels count: {} in texture: {}", texture.channels, texture.name);
-        return;
-    }
-
-    textureImage.create(physicalDevice,
-                        logicalDevice,
-                        texture.size,
-                        mipLevels, 
-                        VK_SAMPLE_COUNT_1_BIT,
-                        format,
-                        VK_IMAGE_TILING_OPTIMAL,
-                        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                        nullptr);
-
-    transition_image_layout(textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    copy_buffer_to_image(stagingBuffer, textureImage);
-
-    if (mipLevels > 1)
-    {
-        generate_mipmaps(textureImage);
-    }
-
-    textureImage.create_view(logicalDevice, VK_IMAGE_ASPECT_COLOR_BIT, nullptr);
-    textureImage.create_sampler(physicalDevice, logicalDevice, nullptr);
-
-    stagingBuffer.clear(logicalDevice, nullptr);
-}
-
-Void SRenderManager::setup_graphics_descriptors()
+Void SRenderManager::create_graphics_descriptors()
 {
     DynamicArray<DescriptorSetInfo> infos;
     infos.reserve(MAX_FRAMES_IN_FLIGHT);
-    const UInt64 descriptorCount = 1;
     for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         DescriptorSetInfo& info = infos.emplace_back();
-        info.name = "GraphicsDescriptorSet" + std::to_string(i);
-        info.bindings.reserve(descriptorCount);
+        info.count       = 1;
+        info.name        = "GraphicsDescriptorSet" + std::to_string(i);
+        info.layoutFlags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+        info.poolFlags   = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
 
         VkDescriptorSetLayoutBinding& uniform = info.bindings.emplace_back();
         uniform.binding         = 0;
@@ -536,63 +623,26 @@ Void SRenderManager::setup_graphics_descriptors()
         uniform.descriptorCount = 1;
         uniform.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT;
 
-        // VkDescriptorSetLayoutBinding& image = info.bindings.emplace_back();
-        // image.binding = 1;
-        // image.descriptorCount = 1;
-        // image.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        // image.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-        // VkDescriptorSetLayoutBinding& storage1 = info.bindings.emplace_back();
-        // storage1.binding = 2;
-        // storage1.descriptorCount = 1;
-        // storage1.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        // storage1.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-        //
-        // VkDescriptorSetLayoutBinding& storage2 = info.bindings.emplace_back();
-        // storage2.binding = 3;
-        // storage2.descriptorCount = 1;
-        // storage2.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        // storage2.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        VkDescriptorBindingFlags& uniformFlags = info.bindingFlags.emplace_back();
+        uniformFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
     }
-    
+
+    DescriptorSetInfo& info = infos.emplace_back();
+    info.count       = 1000;
+    info.name        = "Textures";
+    info.layoutFlags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+    info.poolFlags   = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+
+    VkDescriptorSetLayoutBinding& image = info.bindings.emplace_back();
+    image.binding         = 0;
+    image.descriptorCount = 1000;
+    image.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    image.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorBindingFlags& uniformFlags = info.bindingFlags.emplace_back();
+    uniformFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
 
     descriptorPool.create(infos, logicalDevice, nullptr);
-
-
-    DynamicArray<DescriptorSetupInfo> setupInfos;
-    setupInfos.reserve(MAX_FRAMES_IN_FLIGHT);
-    for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        setupInfos.emplace_back().resources.reserve(descriptorCount);
-        setupInfos[i].dataHandle = descriptorPool.get_set_data_handle_by_name("GraphicsDescriptorSet" + std::to_string(i));
-        DescriptorResourceInfo& uniformBufferResource = setupInfos[i].resources.emplace_back();
-        VkDescriptorBufferInfo uniformBufferInfo;
-        uniformBufferInfo.buffer         = uniformBuffers[i].get_buffer();
-        uniformBufferInfo.offset         = 0;
-        uniformBufferInfo.range          = sizeof(UniformBufferObject);
-        uniformBufferResource.bufferInfo = uniformBufferInfo;
-
-        // DescriptorResourceInfo& imageResource = setupInfos[i].resources.emplace_back();
-        // VkDescriptorImageInfo imageInfo;
-        // imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        // imageInfo.imageView   = nullptr;
-        // imageInfo.sampler     = nullptr;
-        // imageResource.imageInfo = imageInfo;
-
-        //DescriptorResourceInfo& storageBuffer1Resource = setupInfos[i].resources.emplace_back();
-        //VkDescriptorBufferInfo& storageBufferInfoLastFrame = storageBuffer1Resource.bufferInfo.value();
-        //storageBufferInfoLastFrame.buffer = shaderStorageBuffers[(i - 1) % MAX_FRAMES_IN_FLIGHT];
-        //storageBufferInfoLastFrame.offset = 0;
-        //storageBufferInfoLastFrame.range  = sizeof(Particle) * PARTICLE_COUNT;
-        //
-        //DescriptorResourceInfo& storageBuffer2Resource = setupInfos[i].resources.emplace_back();
-        //VkDescriptorBufferInfo& storageBufferInfoCurrentFrame = storageBuffer2Resource.bufferInfo.value();
-        //storageBufferInfoCurrentFrame.buffer = shaderStorageBuffers[i];
-        //storageBufferInfoCurrentFrame.offset = 0;
-        //storageBufferInfoCurrentFrame.range  = sizeof(Particle) * PARTICLE_COUNT;
-    }
-
-    descriptorPool.setup_sets(setupInfos, logicalDevice);
 
     DynamicArray<VkPushConstantRange> pushConstants;
     VkPushConstantRange& pushConstant = pushConstants.emplace_back();
@@ -628,9 +678,10 @@ Void SRenderManager::create_synchronization_objects()
     }
 }
 
-Void SRenderManager::update_uniform_buffer(UInt32 currentImage, Camera& camera)
+Void SRenderManager::update_uniform_buffer(UInt32 currentImage, Camera& camera, Float32 time)
 {
     UniformBufferObject ubo{};
+    ubo.time = time;
     const FMatrix4 view = camera.get_view();
     FMatrix4 proj = camera.get_projection(SDisplayManager::get().get_aspect_ratio());
     proj[1][1] *= -1.0f; // Invert Y axis
@@ -683,15 +734,26 @@ Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32
     scissor.extent = { extent.x, extent.y };
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    VkDescriptorSet set = descriptorPool.get_set_by_name("GraphicsDescriptorSet" + std::to_string(currentFrame));
+    const VkDescriptorSet uniformSet = descriptorPool.get_set_by_name("GraphicsDescriptorSet" + std::to_string(currentFrame));
     vkCmdBindDescriptorSets(commandBuffer,
                             VK_PIPELINE_BIND_POINT_GRAPHICS,
                             graphicsPipeline.get_layout(),
                             0,
                             1,
-                            &set,
+                            &uniformSet,
                             0,
                             nullptr);
+
+    const VkDescriptorSet textureSet = descriptorPool.get_set_by_name("Textures");
+    vkCmdBindDescriptorSets(commandBuffer,
+                            VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            graphicsPipeline.get_layout(),
+                            2,
+                            1,
+                            &textureSet,
+                            0,
+                            nullptr);
+
     SResourceManager& resourceManager = SResourceManager::get();
     for (const Model& model : models)
     {
@@ -709,7 +771,7 @@ Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32
             vkCmdBindVertexBuffers(commandBuffer, 0, 3, vertexBuffers.data(), offsets.data());
             vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-            MeshPushConstant pc;
+            MeshPushConstant pc{};
             pc.model = FMatrix4(1.0f);
             pc.albedoId = material.textures[UInt64(ETextureType::Albedo)].id;
 

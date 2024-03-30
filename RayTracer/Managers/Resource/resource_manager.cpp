@@ -353,16 +353,16 @@ Handle<Texture> SResourceManager::load_texture(const std::filesystem::path& file
 														   &texture.size.x, 
 														   &texture.size.y, 
 														   &texture.channels, 
-														   0));
+														   STBI_rgb_alpha));
 	} else {
 		texture.data = stbi_load(filePath.string().c_str(), 
 								 &texture.size.x, 
 								 &texture.size.y, 
 								 &texture.channels, 
-								 0);
+								 STBI_rgb_alpha);
 	}
-
-	texture.type = type;
+	texture.channels = 4;
+	texture.type	 = type;
 
 	if (!texture.data)
 	{
@@ -539,7 +539,7 @@ const DynamicArray<Material>& SResourceManager::get_materials() const
 	return materials;
 }
 
-const DynamicArray<Texture>& SResourceManager::get_textures() const
+DynamicArray<Texture>& SResourceManager::get_textures()
 {
 	return textures;
 }

@@ -26,9 +26,28 @@ Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMess
     }
 
     //PHYSICAL DEVICE FEATURES
-    VkPhysicalDeviceFeatures deviceFeatures{};
-    deviceFeatures.samplerAnisotropy = VK_TRUE;
-    deviceFeatures.sampleRateShading = VK_TRUE; // enable sample shading feature for the device
+    VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures{};
+    descriptorIndexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+    descriptorIndexingFeatures.pNext = nullptr;
+	descriptorIndexingFeatures.shaderSampledImageArrayNonUniformIndexing     = VK_TRUE;
+    descriptorIndexingFeatures.descriptorBindingSampledImageUpdateAfterBind  = VK_TRUE;
+    descriptorIndexingFeatures.shaderUniformBufferArrayNonUniformIndexing    = VK_TRUE;
+    descriptorIndexingFeatures.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
+    descriptorIndexingFeatures.shaderStorageBufferArrayNonUniformIndexing    = VK_TRUE;
+    descriptorIndexingFeatures.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
+    descriptorIndexingFeatures.descriptorBindingPartiallyBound               = VK_TRUE;
+    descriptorIndexingFeatures.runtimeDescriptorArray                        = VK_TRUE;
+
+    VkPhysicalDeviceFeatures2 deviceFeatures{};
+    deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    deviceFeatures.pNext = &descriptorIndexingFeatures;
+    deviceFeatures.features.samplerAnisotropy = VK_TRUE;
+    deviceFeatures.features.sampleRateShading = VK_TRUE;
+    if (!physicalDevice.are_features_supported(deviceFeatures.features) ||
+        !physicalDevice.are_features_supported(descriptorIndexingFeatures))
+    {
+        return;
+    }
 
     //DEVICE CREATE INFO
     VkDeviceCreateInfo createInfo{};
@@ -36,7 +55,8 @@ Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMess
     createInfo.sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.queueCreateInfoCount    = UInt32(queueCreateInfos.size());
     createInfo.pQueueCreateInfos       = queueCreateInfos.data();
-    createInfo.pEnabledFeatures        = &deviceFeatures;
+    createInfo.pEnabledFeatures        = nullptr; // Device features 2 is used for this in pNext
+    createInfo.pNext                   = &deviceFeatures;
     createInfo.enabledExtensionCount   = UInt32(deviceExtensions.size());
     createInfo.ppEnabledExtensionNames = deviceExtensions.data();
     if constexpr (DebugMessenger::ENABLE_VALIDATION_LAYERS)

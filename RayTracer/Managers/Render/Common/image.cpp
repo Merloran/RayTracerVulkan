@@ -109,6 +109,11 @@ VkImageView Image::get_view() const
     return view;
 }
 
+VkSampler Image::get_sampler() const
+{
+    return sampler;
+}
+
 UInt64 Image::get_mip_levels() const
 {
     return mipLevels;

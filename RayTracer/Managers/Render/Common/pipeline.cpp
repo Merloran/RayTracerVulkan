@@ -146,9 +146,9 @@ Void Pipeline::create_compute_pipeline(const DescriptorPool& descriptorPool, con
     }
 
     VkComputePipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     pipelineInfo.layout = layout;
-    pipelineInfo.stage = shaderStageInfo;
+    pipelineInfo.stage  = shaderStageInfo;
 
     if (vkCreateComputePipelines(logicalDevice.get_device(), VK_NULL_HANDLE, 
 								 1, &pipelineInfo, allocator, &pipeline) != VK_SUCCESS)

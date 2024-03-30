@@ -165,6 +165,7 @@ Bool PhysicalDevice::is_device_suitable(VkSurfaceKHR surface)
         isSwapChainAdequate = !get_formats(surface).empty() && !get_present_modes(surface).empty();
     }
 
+    VkPhysicalDeviceFeatures supportedFeatures;
     vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
 
     return are_families_valid() &&
