@@ -1,7 +1,5 @@
 #include "render_manager.hpp"
 
-#include <filesystem>
-#include <GLFW/glfw3.h>
 
 #include "../Display/display_manager.hpp"
 #include "../Resource/resource_manager.hpp"
@@ -14,6 +12,13 @@
 #include "Common/command_buffer.hpp"
 #include "Common/shader.hpp"
 #include "Common/image.hpp"
+
+#include <filesystem>
+#include <GLFW/glfw3.h>
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
+#include <magic_enum.hpp>
 
 
 SRenderManager& SRenderManager::get()
@@ -55,6 +60,50 @@ Void SRenderManager::startup()
     // computePipeline.create_compute_pipeline(, logicalDevice, nullptr);
 
     create_synchronization_objects();
+}
+
+Void SRenderManager::setup_imgui()
+{
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (Void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+
+    // Setup Dear ImGui style
+    ImGui::StyleColorsDark();
+    //ImGui::StyleColorsLight();
+
+    Array<VkDescriptorPoolSize, 1> poolSizes =
+    {
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
+    };
+    VkDescriptorPoolCreateInfo poolInfo = {};
+    poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    poolInfo.maxSets       = 1;
+    poolInfo.poolSizeCount = UInt32(poolSizes.size());
+    poolInfo.pPoolSizes    = poolSizes.data();
+    VkResult error = vkCreateDescriptorPool(logicalDevice.get_device(), &poolInfo, nullptr, &imguiDescriptorPool);
+    s_check_vk_result(error);
+    
+    const VkSurfaceCapabilitiesKHR capabilities = physicalDevice.get_capabilities(surface);
+    ImGui_ImplGlfw_InitForVulkan(&SDisplayManager::get().get_window(), true);
+    ImGui_ImplVulkan_InitInfo initInfo{};
+    initInfo.Instance        = instance;
+    initInfo.PhysicalDevice  = physicalDevice.get_device();
+    initInfo.Device          = logicalDevice.get_device();
+    initInfo.QueueFamily     = physicalDevice.get_graphics_family_index();
+    initInfo.Queue           = logicalDevice.get_graphics_queue();
+    initInfo.PipelineCache   = graphicsPipeline.get_cache();
+    initInfo.DescriptorPool  = imguiDescriptorPool;
+    initInfo.Subpass         = 0;
+    initInfo.MinImageCount   = capabilities.minImageCount;
+    initInfo.ImageCount      = capabilities.minImageCount + 1;
+    initInfo.MSAASamples     = logicalDevice.get_samples();
+    initInfo.Allocator       = nullptr;
+    initInfo.CheckVkResultFn = s_check_vk_result;
+    ImGui_ImplVulkan_Init(&initInfo, renderPass.get_render_pass());
 }
 
 const Handle<Shader>& SRenderManager::get_shader_handle_by_name(const String& name) const
@@ -317,6 +366,59 @@ Void SRenderManager::pre_render()
     {
         throw std::runtime_error("failed to submit draw command buffer!");
     }
+}
+
+Void SRenderManager::render_imgui()
+{
+        // Start the Dear ImGui frame
+        ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        if (showImguiDemo)
+        {
+	        ImGui::ShowDemoWindow(&showImguiDemo);
+        }
+        
+        {
+            static Float32 f = 0.0f;
+            static Int32 counter = 0;
+
+            ImGui::Begin("Hello, world!");                       
+
+            ImGui::Text("This is some useful text.");             
+            ImGui::Checkbox("Demo Window", &showImguiDemo);     
+            ImGui::Checkbox("Another Window", &showAnotherWindow);
+
+            ImVec4 clearColor = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+            ImGui::SliderFloat("float", &f, 0.0f, 1.0f);  
+            ImGui::ColorEdit3("clear color", (Float32*)&clearColor);
+
+            if (ImGui::Button("Button"))
+            {
+	            counter++;
+            }
+            ImGui::SameLine();
+            ImGui::Text("counter = %d", counter);
+
+            ImGuiIO& io = ImGui::GetIO(); (Void)io;
+            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+            ImGui::End();
+        }
+
+        // 3. Show another simple window.
+        if (showAnotherWindow)
+        {
+            ImGui::Begin("Another Window", &showAnotherWindow);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
+            ImGui::Text("Hello from another window!");
+            if (ImGui::Button("Close Me"))
+            {
+	            showAnotherWindow = false;
+            }
+            ImGui::End();
+        }
+
+        ImGui::Render();
 }
 
 Void SRenderManager::render(Camera& camera, const DynamicArray<Model>& models, Float32 time)
@@ -623,8 +725,8 @@ Void SRenderManager::create_graphics_descriptors()
         uniform.descriptorCount = 1;
         uniform.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT;
 
-        VkDescriptorBindingFlags& uniformFlags = info.bindingFlags.emplace_back();
-        uniformFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+        VkDescriptorBindingFlags& bindlessFlags = info.bindingFlags.emplace_back();
+        bindlessFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
     }
 
     DescriptorSetInfo& info = infos.emplace_back();
@@ -639,8 +741,8 @@ Void SRenderManager::create_graphics_descriptors()
     image.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     image.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    VkDescriptorBindingFlags& uniformFlags = info.bindingFlags.emplace_back();
-    uniformFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+    VkDescriptorBindingFlags& bindlessFlags = info.bindingFlags.emplace_back();
+    bindlessFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
 
     descriptorPool.create(infos, logicalDevice, nullptr);
 
@@ -790,6 +892,9 @@ Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32
                              0);
         }
     }
+
+    //IMGUI
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 
     vkCmdEndRenderPass(commandBuffer);
 
@@ -1094,12 +1199,29 @@ Bool SRenderManager::has_stencil_component(VkFormat format)
     return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 }
 
+Void SRenderManager::s_check_vk_result(VkResult error)
+{
+    if (error != 0)
+    {
+        SPDLOG_ERROR("[vulkan] Error: VkResult = {}", magic_enum::enum_name(error));
+    }
+}
+
+Void SRenderManager::shutdown_imgui()
+{
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+    vkDestroyDescriptorPool(logicalDevice.get_device(), imguiDescriptorPool, nullptr);
+}
+
 Void SRenderManager::shutdown()
 {
     SPDLOG_INFO("Wait until frame end...");
     vkDeviceWaitIdle(logicalDevice.get_device());
     SPDLOG_INFO("Render Manager shutdown.");
 
+    shutdown_imgui();
 
     for(Image& image : images)
     {

@@ -1,4 +1,6 @@
 #pragma once
+#include <imgui_impl_vulkan.h>
+
 #include "Common/debug_messenger.hpp"
 #include "Common/physical_device.hpp"
 #include "Common/logical_device.hpp"
@@ -50,6 +52,7 @@ public:
 	static SRenderManager& get();
 
 	Void startup();
+	Void setup_imgui();
 
 	Handle<Shader> load_shader(const String& filePath, const EShaderType shaderType);
 	Void generate_mesh_buffers(DynamicArray<Mesh>& meshes);
@@ -59,6 +62,7 @@ public:
 	Void setup_graphics_descriptors(const DynamicArray<Texture>& textures);
 
 	Void pre_render();
+	Void render_imgui();
 	Void render(Camera& camera, const DynamicArray<Model>& models, Float32 time);
 
 	[[nodiscard]]
@@ -74,6 +78,7 @@ public:
 	Image& get_image_by_handle(const Handle<Image> handle);
 	Buffer& get_buffer_by_handle(const Handle<Buffer> handle);
 
+	Void shutdown_imgui();
 	Void shutdown();
 
 private:
@@ -108,6 +113,10 @@ private:
 	DynamicArray<VkFence>	  inFlightFences;
 
 	Bool isFrameEven;
+	Bool showImguiDemo;
+	Bool showAnotherWindow;
+	VkDescriptorPool imguiDescriptorPool;
+
 
 	Void create_vulkan_instance();
 	//TODO: Maybe move to display manager
@@ -132,5 +141,7 @@ private:
 	Void begin_quick_commands(VkCommandBuffer &commandBuffer);
 	Void end_quick_commands(VkCommandBuffer commandBuffer);
 	Bool has_stencil_component(VkFormat format);
+
+	static Void s_check_vk_result(VkResult error);
 };
 

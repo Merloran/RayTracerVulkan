@@ -34,7 +34,7 @@ struct DescriptorSetupInfo
 	DynamicArray<DescriptorResourceInfo> resources;
 	Handle<DescriptorSetData> dataHandle;
 };
-
+//TODO: change whole architecture of this class
 class DescriptorPool
 {
 public:

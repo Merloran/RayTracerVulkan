@@ -163,6 +163,11 @@ VkPipeline Pipeline::get_pipeline() const
     return pipeline;
 }
 
+VkPipelineCache Pipeline::get_cache() const
+{
+    return cache;
+}
+
 VkPipelineLayout Pipeline::get_layout() const
 {
     return layout;

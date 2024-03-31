@@ -22,12 +22,15 @@ public:
 	[[nodiscard]]
 	VkPipeline get_pipeline() const;
 	[[nodiscard]]
+	VkPipelineCache get_cache() const;
+	[[nodiscard]]
 	VkPipelineLayout get_layout() const;
 
 	Void clear(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 
 private:
 	VkPipelineLayout layout;
+	VkPipelineCache cache;
 	VkPipeline pipeline;
 	Array<VkDynamicState, 2> dynamicStates =
 	{

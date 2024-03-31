@@ -15,6 +15,7 @@ Int32 main()
 	resourceManager.startup();
 	displayManager.startup();
 	renderManager.startup();
+	renderManager.setup_imgui();
 
 	resourceManager.load_gltf_asset(resourceManager.ASSETS_PATH + "SponzaLighted/SponzaLighted.gltf");
 	renderManager.generate_mesh_buffers(resourceManager.get_meshes());
@@ -34,6 +35,7 @@ Int32 main()
 		lastFrame = currentFrame;
 		displayManager.poll_events();
 		camera.catch_input(deltaTimeMs);
+		renderManager.render_imgui();
 		renderManager.render(camera, resourceManager.get_models(), time);
 	}
 

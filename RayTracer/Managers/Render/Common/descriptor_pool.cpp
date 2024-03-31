@@ -114,9 +114,9 @@ Void DescriptorPool::setup_sets(const DynamicArray<DescriptorSetupInfo>& infos, 
             const DescriptorResourceInfo& resource = info.resources[i];
             write.dstArrayElement = UInt32(i);
             write.dstSet          = sets[data.id];
-            write.descriptorCount = resource.bufferInfos.size()
+            write.descriptorCount = UInt32(resource.bufferInfos.size()
         	                      + resource.imageInfos.size()
-        	                      + resource.texelBufferViews.size();
+        	                      + resource.texelBufferViews.size());
             if (is_resource_compatible(resource, write))
             {
                 write.pBufferInfo      = resource.bufferInfos.data();
