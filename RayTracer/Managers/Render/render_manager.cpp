@@ -41,8 +41,8 @@ Void SRenderManager::startup()
     logicalDevice.create(physicalDevice, debugMessenger, nullptr);
 
     //Shaders should be created after logical device
-    Handle<Shader> vert = load_shader(SHADERS_PATH + "Shader.vert", EShaderType::Vertex);
-    Handle<Shader> frag = load_shader(SHADERS_PATH + "Shader.frag", EShaderType::Fragment);
+    Handle<Shader> vert = load_shader(SHADERS_PATH + "Shader.vert", "main", EShaderType::Vertex);
+    Handle<Shader> frag = load_shader(SHADERS_PATH + "Shader.frag", "main", EShaderType::Fragment);
     DynamicArray<Shader> shaders;
     shaders.emplace_back(get_shader_by_handle(vert));
     shaders.emplace_back(get_shader_by_handle(frag));
@@ -195,17 +195,25 @@ Buffer& SRenderManager::get_buffer_by_handle(const Handle<Buffer> handle)
     return buffers[handle.id];
 }
 
-Handle<Shader> SRenderManager::load_shader(const String& filePath, const EShaderType shaderType)
+Handle<Shader> SRenderManager::load_shader(const String& filePath, const String& functionName, const EShaderType shaderType)
 {
     const UInt64 shaderId = shaders.size();
     Shader& shader        = shaders.emplace_back();
 
     const std::filesystem::path path(filePath);
     const String destinationPath = (SHADERS_PATH / path.filename()).string() + COMPILED_SHADER_EXTENSION;
-    shader.create(filePath, destinationPath, GLSL_COMPILER_PATH, shaderType, logicalDevice, nullptr);
+    shader.create(filePath, destinationPath, GLSL_COMPILER_PATH, functionName, shaderType, logicalDevice, nullptr);
 
     const Handle<Shader> handle{Int32(shaderId)};
-    nameToIdShaders[shader.get_file_path()] = handle;
+    auto iterator = nameToIdShaders.find(shader.get_name());
+    if (iterator != nameToIdShaders.end())
+    {
+        SPDLOG_ERROR("Shader {} already exists.", shader.get_name());
+        shader.clear(logicalDevice, nullptr);
+        return iterator->second;
+    }
+
+    nameToIdShaders[shader.get_name()] = handle;
 
     return handle;
 }
@@ -324,101 +332,48 @@ Void SRenderManager::setup_graphics_descriptors(const DynamicArray<Texture>& tex
     descriptorPool.setup_sets(setupInfos, logicalDevice);
 }
 
-Void SRenderManager::pre_render()
+Void SRenderManager::reload_shaders()
 {
-    UInt64 currentFrame = isFrameEven ? 1 : 0;
+    Bool result = true;
+    result &= get_shader_by_name("VShader").recreate(GLSL_COMPILER_PATH, logicalDevice, nullptr);
+    result &= get_shader_by_name("FShader").recreate(GLSL_COMPILER_PATH, logicalDevice, nullptr);
 
-    VkCommandBuffer currentBuffer = get_command_buffer_by_name("Graphics" + std::to_string(currentFrame + 1)).buffer;
-    
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags            = 0; // Optional
-    beginInfo.pInheritanceInfo = nullptr; // Optional
-
-    if (vkBeginCommandBuffer(currentBuffer, &beginInfo) != VK_SUCCESS)
+    if (!result)
     {
-        throw std::runtime_error("failed to begin recording command buffer!");
+        SPDLOG_ERROR("Failed to reload shaders.");
+        return;
     }
+    DynamicArray<Shader> shaders;
+    shaders.emplace_back(get_shader_by_name("VShader"));
+    shaders.emplace_back(get_shader_by_name("FShader"));
 
-    vkCmdBindPipeline(currentBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline.get_pipeline());
-
-    const VkDescriptorSet textureSet = descriptorPool.get_set_by_name("Textures");
-    vkCmdBindDescriptorSets(currentBuffer,
-                            VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            graphicsPipeline.get_layout(),
-                            2,
-                            1,
-                            &textureSet,
-                            0,
-                            nullptr);
-
-    if (vkEndCommandBuffer(currentBuffer) != VK_SUCCESS)
-    {
-        throw std::runtime_error("failed to record command buffer!");
-    }
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers    = &currentBuffer;
-
-    if (vkQueueSubmit(logicalDevice.get_graphics_queue(), 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
-    {
-        throw std::runtime_error("failed to submit draw command buffer!");
-    }
+    vkDeviceWaitIdle(logicalDevice.get_device());
+    graphicsPipeline.recreate_pipeline(descriptorPool, renderPass, shaders, logicalDevice, nullptr);
 }
 
 Void SRenderManager::render_imgui()
 {
-        // Start the Dear ImGui frame
-        ImGui_ImplVulkan_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
+    // Start the Dear ImGui frame
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+    
 
-        if (showImguiDemo)
-        {
-	        ImGui::ShowDemoWindow(&showImguiDemo);
-        }
-        
-        {
-            static Float32 f = 0.0f;
-            static Int32 counter = 0;
+    ImGui::Begin("Config");                       
 
-            ImGui::Begin("Hello, world!");                       
+    ImGui::Text("This is some useful text.");
+    
 
-            ImGui::Text("This is some useful text.");             
-            ImGui::Checkbox("Demo Window", &showImguiDemo);     
-            ImGui::Checkbox("Another Window", &showAnotherWindow);
+    if (ImGui::Button("Reload Shaders"))
+    {
+        reload_shaders();
+    }
 
-            ImVec4 clearColor = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-            ImGui::SliderFloat("float", &f, 0.0f, 1.0f);  
-            ImGui::ColorEdit3("clear color", (Float32*)&clearColor);
+    ImGuiIO& io = ImGui::GetIO(); (Void)io;
+    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+    ImGui::End();
 
-            if (ImGui::Button("Button"))
-            {
-	            counter++;
-            }
-            ImGui::SameLine();
-            ImGui::Text("counter = %d", counter);
-
-            ImGuiIO& io = ImGui::GetIO(); (Void)io;
-            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-            ImGui::End();
-        }
-
-        // 3. Show another simple window.
-        if (showAnotherWindow)
-        {
-            ImGui::Begin("Another Window", &showAnotherWindow);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-            ImGui::Text("Hello from another window!");
-            if (ImGui::Button("Close Me"))
-            {
-	            showAnotherWindow = false;
-            }
-            ImGui::End();
-        }
-
-        ImGui::Render();
+    ImGui::Render();
 }
 
 Void SRenderManager::render(Camera& camera, const DynamicArray<Model>& models, Float32 time)

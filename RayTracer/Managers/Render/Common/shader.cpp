@@ -6,22 +6,21 @@
 #include <sstream>
 
 
-Void Shader::create(const String& filePath, const String& destinationPath, const String& compilerPath, const EShaderType shaderType, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+Void Shader::create(const String& filePath, const String& destinationPath, const String& compilerPath, const String& functionName, const EShaderType shaderType, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
-    const std::filesystem::path path(filePath);
     this->filePath = filePath;
     this->destinationPath = destinationPath;
-    name = path.stem().string();
+    this->functionName = functionName;
     type = shaderType;
+	compose_name(filePath, shaderType);
 
 	const Bool isCompiled = compile(filePath, destinationPath, compilerPath);
-
     if (!isCompiled)
     {
         return;
     }
-    const Bool isLoaded = load(filePath, destinationPath);
 
+    const Bool isLoaded = load(filePath, destinationPath);
     if (!isLoaded)
     {
         return;
@@ -30,29 +29,33 @@ Void Shader::create(const String& filePath, const String& destinationPath, const
     create_module(logicalDevice, allocator);
 }
 
-Void Shader::recreate(const String& compilerPath, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+Bool Shader::recreate(const String& compilerPath, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
     clear(logicalDevice, allocator);
 
     const Bool isCompiled = compile(filePath, destinationPath, compilerPath);
-
     if (!isCompiled)
     {
-        return;
+        return false;
     }
 
     const Bool isLoaded = load(filePath, destinationPath);
     if (!isLoaded)
     {
-        return;
+        return false;
     }
 
-    create_module(logicalDevice, allocator);
+    return create_module(logicalDevice, allocator);
 }
 
 const String& Shader::get_name() const
 {
     return name;
+}
+
+const String& Shader::get_function_name() const
+{
+    return functionName;
 }
 
 const String& Shader::get_file_path() const
@@ -68,6 +71,43 @@ const VkShaderModule& Shader::get_module() const
 EShaderType Shader::get_type() const
 {
     return type;
+}
+
+Void Shader::compose_name(const String& filePath, EShaderType type)
+{
+    String prefix;
+	switch (type)
+	{
+		case EShaderType::Vertex:
+		{
+            prefix = "V";
+			break;
+		}
+		case EShaderType::Geometry:
+        {
+            prefix = "G";
+            break;
+        }
+		case EShaderType::Fragment:
+        {
+            prefix = "F";
+            break;
+        }
+		case EShaderType::Compute:
+        {
+            prefix = "C";
+            break;
+        }
+        case EShaderType::None:
+		default:
+        {
+            prefix = "N";
+            break;
+        }
+	}
+
+    const std::filesystem::path path(filePath);
+	name = prefix + path.stem().string();
 }
 
 Bool Shader::compile(const String& filePath, const String& destinationPath, const String& compilerPath)
@@ -104,7 +144,7 @@ Bool Shader::load(const String& filePath, const String& destinationPath)
     return true;
 }
 
-Void Shader::create_module(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+Bool Shader::create_module(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
     VkShaderModuleCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -114,12 +154,15 @@ Void Shader::create_module(const LogicalDevice& logicalDevice, const VkAllocatio
     if (vkCreateShaderModule(logicalDevice.get_device(), &createInfo, allocator, &module) != VK_SUCCESS)
     {
         SPDLOG_ERROR("Failed to create shader module {}", name);
+        return false;
     }
+
+    return true;
 }
 
 Void Shader::clear(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
     code.clear();
     vkDestroyShaderModule(logicalDevice.get_device(), module, allocator);
-    module = nullptr;
+    module = VK_NULL_HANDLE;
 }

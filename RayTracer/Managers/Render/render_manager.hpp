@@ -54,14 +54,14 @@ public:
 	Void startup();
 	Void setup_imgui();
 
-	Handle<Shader> load_shader(const String& filePath, const EShaderType shaderType);
+	Handle<Shader> load_shader(const String& filePath, const String& functionName, const EShaderType shaderType);
 	Void generate_mesh_buffers(DynamicArray<Mesh>& meshes);
 	Void create_mesh_buffers(Mesh& mesh);
 	Void generate_texture_images(DynamicArray<Texture>& textures);
 	Void create_texture_image(Texture& texture, UInt32 mipLevels = 1);
 	Void setup_graphics_descriptors(const DynamicArray<Texture>& textures);
-
-	Void pre_render();
+	Void reload_shaders();
+	
 	Void render_imgui();
 	Void render(Camera& camera, const DynamicArray<Model>& models, Float32 time);
 
@@ -113,8 +113,7 @@ private:
 	DynamicArray<VkFence>	  inFlightFences;
 
 	Bool isFrameEven;
-	Bool showImguiDemo;
-	Bool showAnotherWindow;
+
 	VkDescriptorPool imguiDescriptorPool;
 
 

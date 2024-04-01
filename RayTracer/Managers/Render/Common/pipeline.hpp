@@ -6,6 +6,14 @@ class RenderPass;
 class Shader;
 class LogicalDevice;
 
+enum class EPipelineType : UInt8
+{
+	None = 0U,
+	Graphics,
+	Compute,
+	Count = 2U
+};
+
 class Pipeline
 {
 public:
@@ -14,11 +22,20 @@ public:
 								  const DynamicArray<Shader>& shaders,
 								  const LogicalDevice& logicalDevice,
 								  const VkAllocationCallbacks* allocator);
+
 	Void create_compute_pipeline(const DescriptorPool& descriptorPool, 
 								 const Shader& shader,
 								 const LogicalDevice& logicalDevice,
 								 const VkAllocationCallbacks* allocator);
 
+	Void recreate_pipeline(const DescriptorPool& descriptorPool,
+						   const RenderPass& renderPass,
+						   const DynamicArray<Shader>& shaders,
+						   const LogicalDevice& logicalDevice,
+						   const VkAllocationCallbacks* allocator);
+
+	[[nodiscard]]
+	EPipelineType get_type() const;
 	[[nodiscard]]
 	VkPipeline get_pipeline() const;
 	[[nodiscard]]
@@ -32,6 +49,7 @@ private:
 	VkPipelineLayout layout;
 	VkPipelineCache cache;
 	VkPipeline pipeline;
+	EPipelineType type;
 	Array<VkDynamicState, 2> dynamicStates =
 	{
 		VK_DYNAMIC_STATE_VIEWPORT,

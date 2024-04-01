@@ -131,6 +131,7 @@ Void Pipeline::create_graphics_pipeline(const DescriptorPool& descriptorPool, co
     {
         throw std::runtime_error("failed to create graphics pipeline!");
     }
+    type = EPipelineType::Graphics;
 }
 
 Void Pipeline::create_compute_pipeline(const DescriptorPool& descriptorPool, const Shader& shader, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
@@ -155,7 +156,25 @@ Void Pipeline::create_compute_pipeline(const DescriptorPool& descriptorPool, con
     {
         throw std::runtime_error("failed to create compute pipeline!");
     }
-    
+    type = EPipelineType::Compute;
+}
+
+Void Pipeline::recreate_pipeline(const DescriptorPool& descriptorPool, const RenderPass& renderPass, const DynamicArray<Shader>& shaders, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+{
+    clear(logicalDevice, allocator);
+    if (type == EPipelineType::Graphics)
+    {
+        create_graphics_pipeline(descriptorPool, renderPass, shaders, logicalDevice, allocator);
+    }
+    else if (type == EPipelineType::Compute)
+    {
+        create_compute_pipeline(descriptorPool, shaders[0], logicalDevice, allocator);
+    }
+}
+
+EPipelineType Pipeline::get_type() const
+{
+    return type;
 }
 
 VkPipeline Pipeline::get_pipeline() const
@@ -221,8 +240,7 @@ Bool Pipeline::create_shader_stage_info(const Shader& shader, VkPipelineShaderSt
 	    }
     }
     info.module = shader.get_module();
-    //TODO: make it as variable!
-    info.pName  = "main";
+    info.pName  = shader.get_function_name().c_str();
     return true;
 }
 
