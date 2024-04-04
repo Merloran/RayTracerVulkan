@@ -8,7 +8,9 @@ struct Mesh
 	DynamicArray<FVector3> normals;
 	DynamicArray<FVector2> uvs;
 	DynamicArray<UInt32> indexes;
-	Handle<Buffer> vertexesHandle;
+	Handle<Buffer> positionsHandle;
+	Handle<Buffer> normalsHandle;
+	Handle<Buffer> uvsHandle;
 	Handle<Buffer> indexesHandle;
 	String name;
 };

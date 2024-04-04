@@ -1,6 +1,4 @@
 #pragma once
-#include <imgui_impl_vulkan.h>
-
 #include "Common/debug_messenger.hpp"
 #include "Common/physical_device.hpp"
 #include "Common/logical_device.hpp"
@@ -54,7 +52,7 @@ public:
 	Void startup();
 	Void setup_imgui();
 
-	Handle<Shader> load_shader(const String& filePath, const String& functionName, const EShaderType shaderType);
+	Handle<Shader> load_shader(const String& filePath, const EShaderType shaderType, const String& functionName = "main");
 	Void generate_mesh_buffers(DynamicArray<Mesh>& meshes);
 	Void create_mesh_buffers(Mesh& mesh);
 	Void generate_texture_images(DynamicArray<Texture>& textures);
@@ -77,6 +75,68 @@ public:
 
 	Image& get_image_by_handle(const Handle<Image> handle);
 	Buffer& get_buffer_by_handle(const Handle<Buffer> handle);
+
+	template <typename Type>
+	Handle<Buffer> create_dynamic_buffer(VkBufferUsageFlagBits usage, 
+										VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT 
+																		 | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+	{
+		const VkDeviceSize bufferSize = sizeof(Type);
+		const Handle<Buffer> handle = { Int32(uniformBuffers.size()) };
+		Buffer& buffer = uniformBuffers.emplace_back();
+
+		buffer.create(physicalDevice,
+					  logicalDevice,
+					  bufferSize,
+					  usage,
+					  properties,
+					  nullptr);
+		vkMapMemory(logicalDevice.get_device(), buffer.get_memory(), 0, bufferSize, 0, buffer.get_mapped_memory());
+
+		return handle;
+	}
+	template <typename Type>
+	Void update_dynamic_buffer(const Type& data, Buffer& buffer)
+	{
+		memcpy(*buffer.get_mapped_memory(), &data, sizeof(Type));
+	}
+
+	template<typename Type>
+	Handle<Buffer> create_static_buffer(const DynamicArray<Type>& data, 
+									   VkBufferUsageFlagBits usage, 
+									   VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+	{
+		const UInt64 bufferSize = sizeof(data[0]) * data.size();
+
+		Buffer stagingBuffer;
+		stagingBuffer.create(physicalDevice,
+							 logicalDevice,
+							 bufferSize,
+							 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+							 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+							 nullptr);
+
+		Void* addressToGPU;
+		vkMapMemory(logicalDevice.get_device(), stagingBuffer.get_memory(), 0, bufferSize, 0, &addressToGPU);
+		memcpy(addressToGPU, data.data(), bufferSize);
+		vkUnmapMemory(logicalDevice.get_device(), stagingBuffer.get_memory());
+
+		const Handle<Buffer> handle = { Int32(buffers.size()) };
+		Buffer& buffer = buffers.emplace_back();
+
+		buffer.create(physicalDevice,
+						   logicalDevice,
+						   bufferSize,
+						   VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
+						   properties,
+						   nullptr);
+
+		copy_buffer(stagingBuffer, buffer);
+
+		stagingBuffer.clear(logicalDevice, nullptr);
+
+		return handle;
+	}
 
 	Void shutdown_imgui();
 	Void shutdown();
@@ -123,13 +183,9 @@ private:
 	Void create_surface();
 	Void create_command_pool(VkCommandPoolCreateFlagBits flags);
 	Void create_command_buffers(VkCommandBufferLevel level, const DynamicArray<String>& names);
-	Void create_vertex_buffer(Mesh& mesh);
-	Void create_index_buffer(Mesh& mesh);
-	Void create_uniform_buffer();
 	Void create_graphics_descriptors();
 	Void create_synchronization_objects();
-
-	Void update_uniform_buffer(UInt32 currentImage, Camera& camera, Float32 time);
+	
 	Void record_command_buffer(VkCommandBuffer commandBuffer, UInt32 imageIndex, const DynamicArray<Model>& models);
 	Void recreate_swapchain();
 

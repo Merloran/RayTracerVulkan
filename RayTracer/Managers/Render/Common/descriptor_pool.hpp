@@ -5,21 +5,13 @@
 class LogicalDevice;
 
 
-struct DescriptorSetInfo
+struct DescriptorLayoutData
 {
 	DynamicArray<VkDescriptorSetLayoutBinding> bindings;
 	DynamicArray<VkDescriptorBindingFlags> bindingFlags;
 	VkDescriptorSetLayoutCreateFlags layoutFlags;
-	VkDescriptorPoolCreateFlags poolFlags;
-	UInt32 count;
 	String name;
-};
-
-struct DescriptorSetData
-{
-	DynamicArray<VkWriteDescriptorSet> writes;
-	String name;
-	UInt32 id;
+	VkDescriptorSetLayout layout;
 };
 
 struct DescriptorResourceInfo
@@ -29,46 +21,68 @@ struct DescriptorResourceInfo
 	DynamicArray<VkBufferView> texelBufferViews;
 };
 
-struct DescriptorSetupInfo
+struct DescriptorSetData
 {
-	DynamicArray<DescriptorResourceInfo> resources;
-	Handle<DescriptorSetData> dataHandle;
+	DynamicArray<DescriptorResourceInfo> resources; //TODO: think of remove it
+	DynamicArray<VkWriteDescriptorSet> writes;
+	String name;
+	Handle<DescriptorLayoutData> layoutHandle;
+	VkDescriptorSet set;
 };
-//TODO: change whole architecture of this class
+
 class DescriptorPool
 {
 public:
-	Void create(const DynamicArray<DescriptorSetInfo>& infos,
-				const LogicalDevice& logicalDevice, 
-				const VkAllocationCallbacks* allocator);
+	// Recommended to add first binding with highest set number
+	Void add_binding(const String& layoutName, 
+					 UInt32 setNumber,
+					 UInt32 binding,
+					 VkDescriptorType descriptorType,
+					 UInt32 descriptorCount,
+					 VkShaderStageFlagBits stageFlags,
+					 VkDescriptorBindingFlags bindingFlags = 0,
+					 VkDescriptorSetLayoutCreateFlags layoutFlags = 0,
+					 VkDescriptorPoolCreateFlags poolFlags = 0);
 
-	Void setup_sets(const DynamicArray<DescriptorSetupInfo>& infos, const LogicalDevice& logicalDevice);
+	Void create_layouts(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 
-	Void setup_push_constants(const DynamicArray<VkPushConstantRange> &pushConstants);
+	Void add_set(Handle<DescriptorLayoutData> layoutHandle, const DynamicArray<DescriptorResourceInfo>& resources, const String &name);
+
+	Void create_sets(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
+
+	Void set_push_constants(const DynamicArray<VkPushConstantRange> &pushConstants);
+
+	[[nodiscard]]
+	Handle<DescriptorLayoutData> get_layout_data_handle_by_name(const String& name) const;
+	DescriptorLayoutData& get_layout_data_by_name(const String& name);
+	DescriptorLayoutData& get_layout_data_by_handle(const Handle<DescriptorLayoutData> handle);
 
 	[[nodiscard]]
 	const Handle<DescriptorSetData>& get_set_data_handle_by_name(const String& name)  const;
 	DescriptorSetData& get_set_data_by_name(const String& name);
 	DescriptorSetData& get_set_data_by_handle(const Handle<DescriptorSetData> handle);
-	VkDescriptorSetLayout& get_set_layout_by_name(const String& name);
-	VkDescriptorSetLayout& get_set_layout_by_handle(const Handle<DescriptorSetData> handle);
-	VkDescriptorSet& get_set_by_name(const String& name);
-	VkDescriptorSet& get_set_by_handle(const Handle<DescriptorSetData> handle);
-	const DynamicArray<VkDescriptorSetLayout>& get_layouts() const;
-	const DynamicArray<VkPushConstantRange>& get_push_constants() const;
 
+	[[nodiscard]]
+	const DynamicArray<VkPushConstantRange>& get_push_constants() const;
+	DynamicArray<VkDescriptorSetLayout> get_layouts() const;
+
+	Bool are_resources_compatible(const DescriptorLayoutData& layout, const DynamicArray<DescriptorResourceInfo>& resources);
 
 	Void clear(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 
 private:
-	VkDescriptorPool pool = nullptr;
+	VkDescriptorPool pool = VK_NULL_HANDLE;
+	VkDescriptorPoolCreateFlags poolFlags = 0;
 	DynamicArray<VkDescriptorPoolSize> sizes;
+
+	HashMap<String, Handle<DescriptorLayoutData>> nameToIdLayoutData;
+	DynamicArray<DescriptorLayoutData> layoutData;
+	DynamicArray<VkPushConstantRange> pushConstants;
+	VkDescriptorSetLayout empty;
+
 	HashMap<String, Handle<DescriptorSetData>> nameToIdSetData;
 	DynamicArray<DescriptorSetData> setData;
-	DynamicArray<VkDescriptorSetLayout> layouts;
-	DynamicArray<VkPushConstantRange> pushConstants;
-	DynamicArray<VkDescriptorSet> sets;
 
-	Bool is_resource_compatible(const DescriptorResourceInfo& resource, const VkWriteDescriptorSet& write) const;
+	Void create_empty(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 };
 

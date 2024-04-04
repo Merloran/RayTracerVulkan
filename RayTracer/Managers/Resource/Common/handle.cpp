@@ -14,5 +14,6 @@ const Handle<Material> Handle<Material>::sNone = { -1 };
 const Handle<Texture> Handle<Texture>::sNone = { -1 };
 const Handle<Shader> Handle<Shader>::sNone = { -1 };
 const Handle<DescriptorSetData> Handle<DescriptorSetData>::sNone = { -1 };
+const Handle<DescriptorLayoutData> Handle<DescriptorLayoutData>::sNone = { -1 };
 const Handle<CommandBuffer> Handle<CommandBuffer>::sNone = { -1 };
 const Handle<Image> Handle<Image>::sNone = { -1 };

@@ -190,6 +190,8 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="Managers\Raytrace\Common\bvh_builder.cpp" />
+    <ClCompile Include="Managers\Raytrace\raytrace_manager.cpp" />
     <ClCompile Include="Managers\Render\Camera\camera.cpp" />
     <ClCompile Include="Managers\Render\Common\buffer.cpp" />
     <ClCompile Include="Managers\Render\Common\debug_messenger.cpp" />
@@ -208,6 +210,10 @@
     <ClCompile Include="Managers\Display\display_manager.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Managers\Raytrace\Common\bvh_builder.hpp" />
+    <ClInclude Include="Managers\Raytrace\Common\bvh_node.hpp" />
+    <ClInclude Include="Managers\Raytrace\Common\vertex.hpp" />
+    <ClInclude Include="Managers\Raytrace\raytrace_manager.hpp" />
     <ClInclude Include="Managers\Render\Camera\camera.hpp" />
     <ClInclude Include="Managers\Render\Common\buffer.hpp" />
     <ClInclude Include="Core\pch.hpp" />

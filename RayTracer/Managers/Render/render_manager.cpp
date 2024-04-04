@@ -41,13 +41,16 @@ Void SRenderManager::startup()
     logicalDevice.create(physicalDevice, debugMessenger, nullptr);
 
     //Shaders should be created after logical device
-    Handle<Shader> vert = load_shader(SHADERS_PATH + "Shader.vert", "main", EShaderType::Vertex);
-    Handle<Shader> frag = load_shader(SHADERS_PATH + "Shader.frag", "main", EShaderType::Fragment);
+    Handle<Shader> vert = load_shader(SHADERS_PATH + "Shader.vert", EShaderType::Vertex);
+    Handle<Shader> frag = load_shader(SHADERS_PATH + "Shader.frag", EShaderType::Fragment);
     DynamicArray<Shader> shaders;
     shaders.emplace_back(get_shader_by_handle(vert));
     shaders.emplace_back(get_shader_by_handle(frag));
     swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
-    create_uniform_buffer();
+    for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    {
+        create_dynamic_buffer<UniformBufferObject>(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    }
     create_graphics_descriptors();
 
     create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
@@ -195,7 +198,7 @@ Buffer& SRenderManager::get_buffer_by_handle(const Handle<Buffer> handle)
     return buffers[handle.id];
 }
 
-Handle<Shader> SRenderManager::load_shader(const String& filePath, const String& functionName, const EShaderType shaderType)
+Handle<Shader> SRenderManager::load_shader(const String& filePath, const EShaderType shaderType, const String& functionName)
 {
     const UInt64 shaderId = shaders.size();
     Shader& shader        = shaders.emplace_back();
@@ -228,8 +231,10 @@ Void SRenderManager::generate_mesh_buffers(DynamicArray<Mesh>& meshes)
 
 Void SRenderManager::create_mesh_buffers(Mesh& mesh)
 {
-    create_vertex_buffer(mesh);
-    create_index_buffer(mesh);
+    mesh.positionsHandle = create_static_buffer(mesh.positions, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    mesh.normalsHandle   = create_static_buffer(mesh.normals, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    mesh.uvsHandle       = create_static_buffer(mesh.uvs, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    mesh.indexesHandle   = create_static_buffer(mesh.indexes, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 }
 
 Void SRenderManager::generate_texture_images(DynamicArray<Texture>& textures)
@@ -302,23 +307,21 @@ Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
 
 Void SRenderManager::setup_graphics_descriptors(const DynamicArray<Texture>& textures)
 {
-    DynamicArray<DescriptorSetupInfo> setupInfos;
-    setupInfos.reserve(MAX_FRAMES_IN_FLIGHT);
     for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        DescriptorSetupInfo& setupInfo = setupInfos.emplace_back();
-        setupInfo.dataHandle = descriptorPool.get_set_data_handle_by_name("GraphicsDescriptorSet" + std::to_string(i));
-        DynamicArray<VkDescriptorBufferInfo>& bufferInfos = setupInfo.resources.emplace_back().bufferInfos;
-        VkDescriptorBufferInfo& uniformBufferInfo = bufferInfos.emplace_back();
+        DynamicArray<DescriptorResourceInfo> resources;
+        VkDescriptorBufferInfo& uniformBufferInfo = resources.emplace_back().bufferInfos.emplace_back();
         uniformBufferInfo.buffer = uniformBuffers[i].get_buffer();
         uniformBufferInfo.offset = 0;
         uniformBufferInfo.range  = sizeof(UniformBufferObject);
+
+        descriptorPool.add_set(descriptorPool.get_layout_data_handle_by_name("CameraDataLayout" + std::to_string(i)),
+                               resources,
+							   "GraphicsDescriptorSet" + std::to_string(i));
     }
 
-
-    DescriptorSetupInfo& setupInfo = setupInfos.emplace_back();
-    setupInfo.dataHandle = descriptorPool.get_set_data_handle_by_name("Textures");
-    DynamicArray<VkDescriptorImageInfo>& imageInfos = setupInfo.resources.emplace_back().imageInfos;
+    DynamicArray<DescriptorResourceInfo> resources;
+    DynamicArray<VkDescriptorImageInfo>& imageInfos = resources.emplace_back().imageInfos;
     imageInfos.reserve(textures.size());
     for (const Texture& texture : textures)
     {
@@ -329,7 +332,12 @@ Void SRenderManager::setup_graphics_descriptors(const DynamicArray<Texture>& tex
         imageInfo.sampler     = image.get_sampler();
     }
 
-    descriptorPool.setup_sets(setupInfos, logicalDevice);
+    descriptorPool.add_set(descriptorPool.get_layout_data_handle_by_name("TexturesDataLayout"),
+                           resources,
+                           "Textures");
+
+
+    descriptorPool.create_sets(logicalDevice, nullptr);
 }
 
 Void SRenderManager::reload_shaders()
@@ -399,7 +407,16 @@ Void SRenderManager::render(Camera& camera, const DynamicArray<Model>& models, F
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
-    update_uniform_buffer(UInt32(currentFrame), camera, time);
+    {
+        UniformBufferObject ubo{};
+        ubo.time = time;
+        const FMatrix4 view = camera.get_view();
+        FMatrix4 proj = camera.get_projection(SDisplayManager::get().get_aspect_ratio());
+        proj[1][1] *= -1.0f; // Invert Y axis
+        ubo.viewProjection = proj * view;
+        update_dynamic_buffer(ubo, uniformBuffers[currentFrame]);
+    }
+
 
     vkResetFences(logicalDevice.get_device(), 1, &inFlightFences[currentFrame]);
 
@@ -568,138 +585,32 @@ Void SRenderManager::create_command_buffers(VkCommandBufferLevel level, const Dy
     }
 }
 
-Void SRenderManager::create_vertex_buffer(Mesh& mesh)
-{
-	const UInt64 positionsSize = sizeof(mesh.positions[0]) * mesh.positions.size();
-	const UInt64 normalsSize   = sizeof(mesh.normals[0]) * mesh.normals.size();
-	const UInt64 uvsSize       = sizeof(mesh.uvs[0]) * mesh.uvs.size();
-	const VkDeviceSize bufferSize = positionsSize
-							      + normalsSize
-							      + uvsSize;
-
-    Buffer stagingBuffer;
-    stagingBuffer.create(physicalDevice,
-                         logicalDevice,
-                         bufferSize,
-                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                         nullptr);
-
-    Void* data;
-    UInt64 offset = 0;
-    vkMapMemory(logicalDevice.get_device(), stagingBuffer.get_memory(), 0, bufferSize, 0, &data);
-    UInt8* destination = reinterpret_cast<UInt8*>(data);
-
-    memcpy(destination + offset, mesh.positions.data(), positionsSize);
-    offset += positionsSize;
-    memcpy(destination + offset, mesh.normals.data(), normalsSize);
-    offset += normalsSize;
-    memcpy(destination + offset, mesh.uvs.data(), uvsSize);
-
-    vkUnmapMemory(logicalDevice.get_device(), stagingBuffer.get_memory());
-
-    mesh.vertexesHandle.id = UInt32(buffers.size());
-    Buffer& vertexBuffer = buffers.emplace_back();
-
-    vertexBuffer.create(physicalDevice,
-                        logicalDevice,
-                        bufferSize,
-                        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                        nullptr);
-
-    copy_buffer(stagingBuffer, vertexBuffer);
-
-    stagingBuffer.clear(logicalDevice, nullptr);
-}
-
-Void SRenderManager::create_index_buffer(Mesh& mesh)
-{
-    VkDeviceSize bufferSize = sizeof(mesh.indexes[0]) * mesh.indexes.size();
-
-    Buffer stagingBuffer;
-    stagingBuffer.create(physicalDevice,
-                         logicalDevice,
-                         bufferSize,
-                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                         nullptr);
-
-    Void* data;
-    vkMapMemory(logicalDevice.get_device(), stagingBuffer.get_memory(), 0, bufferSize, 0, &data);
-    memcpy(data, mesh.indexes.data(), bufferSize);
-    vkUnmapMemory(logicalDevice.get_device(), stagingBuffer.get_memory());
-
-    mesh.indexesHandle.id = UInt32(buffers.size());
-    Buffer& indexBuffer = buffers.emplace_back();
-
-    indexBuffer.create(physicalDevice,
-                       logicalDevice,
-                       bufferSize,
-                       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                       nullptr);
-
-    copy_buffer(stagingBuffer, indexBuffer);
-
-    stagingBuffer.clear(logicalDevice, nullptr);
-}
-
-Void SRenderManager::create_uniform_buffer()
-{
-    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
-    uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-
-    for (Buffer& buffer : uniformBuffers)
-    {
-        buffer.create(physicalDevice,
-                      logicalDevice,
-                      bufferSize,
-                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                      nullptr);
-        vkMapMemory(logicalDevice.get_device(), buffer.get_memory(), 0, bufferSize, 0, buffer.get_mapped_memory());
-    }
-}
-
 Void SRenderManager::create_graphics_descriptors()
 {
-    DynamicArray<DescriptorSetInfo> infos;
-    infos.reserve(MAX_FRAMES_IN_FLIGHT);
+    descriptorPool.add_binding("TexturesDataLayout",
+                               2,
+                               0,
+                               VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                               1000,
+                               VK_SHADER_STAGE_FRAGMENT_BIT,
+                               VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+                               VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
+                               VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
+
     for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
-        DescriptorSetInfo& info = infos.emplace_back();
-        info.count       = 1;
-        info.name        = "GraphicsDescriptorSet" + std::to_string(i);
-        info.layoutFlags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-        info.poolFlags   = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
-
-        VkDescriptorSetLayoutBinding& uniform = info.bindings.emplace_back();
-        uniform.binding         = 0;
-        uniform.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        uniform.descriptorCount = 1;
-        uniform.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT;
-
-        VkDescriptorBindingFlags& bindlessFlags = info.bindingFlags.emplace_back();
-        bindlessFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+        descriptorPool.add_binding("CameraDataLayout" + std::to_string(i),
+                                   i,
+                                   0,
+                                   VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                   1,
+                                   VK_SHADER_STAGE_VERTEX_BIT,
+                                   VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+                                   VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
+                                   VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
     }
 
-    DescriptorSetInfo& info = infos.emplace_back();
-    info.count       = 1000;
-    info.name        = "Textures";
-    info.layoutFlags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
-    info.poolFlags   = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
-
-    VkDescriptorSetLayoutBinding& image = info.bindings.emplace_back();
-    image.binding         = 0;
-    image.descriptorCount = 1000;
-    image.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    image.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorBindingFlags& bindlessFlags = info.bindingFlags.emplace_back();
-    bindlessFlags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
-
-    descriptorPool.create(infos, logicalDevice, nullptr);
+    descriptorPool.create_layouts(logicalDevice, nullptr);
 
     DynamicArray<VkPushConstantRange> pushConstants;
     VkPushConstantRange& pushConstant = pushConstants.emplace_back();
@@ -707,7 +618,7 @@ Void SRenderManager::create_graphics_descriptors()
     pushConstant.offset = 0;
     pushConstant.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
 
-    descriptorPool.setup_push_constants(pushConstants);
+    descriptorPool.set_push_constants(pushConstants);
 }
 
 Void SRenderManager::create_synchronization_objects()
@@ -733,17 +644,6 @@ Void SRenderManager::create_synchronization_objects()
             throw std::runtime_error("failed to create synchronization objects for a frame!");
         }
     }
-}
-
-Void SRenderManager::update_uniform_buffer(UInt32 currentImage, Camera& camera, Float32 time)
-{
-    UniformBufferObject ubo{};
-    ubo.time = time;
-    const FMatrix4 view = camera.get_view();
-    FMatrix4 proj = camera.get_projection(SDisplayManager::get().get_aspect_ratio());
-    proj[1][1] *= -1.0f; // Invert Y axis
-    ubo.viewProjection = proj * view;
-    memcpy(*uniformBuffers[currentImage].get_mapped_memory(), &ubo, sizeof(ubo));
 }
 
 Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32 imageIndex, const DynamicArray<Model>& models)
@@ -791,7 +691,7 @@ Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32
     scissor.extent = { extent.x, extent.y };
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    const VkDescriptorSet uniformSet = descriptorPool.get_set_by_name("GraphicsDescriptorSet" + std::to_string(currentFrame));
+    const VkDescriptorSet uniformSet = descriptorPool.get_set_data_by_name("GraphicsDescriptorSet" + std::to_string(currentFrame)).set;
     vkCmdBindDescriptorSets(commandBuffer,
                             VK_PIPELINE_BIND_POINT_GRAPHICS,
                             graphicsPipeline.get_layout(),
@@ -801,7 +701,7 @@ Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32
                             0,
                             nullptr);
 
-    const VkDescriptorSet textureSet = descriptorPool.get_set_by_name("Textures");
+    const VkDescriptorSet textureSet = descriptorPool.get_set_data_by_name("Textures").set;
     vkCmdBindDescriptorSets(commandBuffer,
                             VK_PIPELINE_BIND_POINT_GRAPHICS,
                             graphicsPipeline.get_layout(),
@@ -819,13 +719,18 @@ Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32
             const Mesh& mesh = resourceManager.get_mesh_by_handle(model.meshes[i]);
             const Material& material = resourceManager.get_material_by_handle(model.materials[i]);
 
-            const VkBuffer vertexBuffer = get_buffer_by_handle(mesh.vertexesHandle).get_buffer();
+            const VkBuffer positionsBuffer = get_buffer_by_handle(mesh.positionsHandle).get_buffer();
+            const VkBuffer normalsBuffer = get_buffer_by_handle(mesh.normalsHandle).get_buffer();
+            const VkBuffer uvsBuffer = get_buffer_by_handle(mesh.uvsHandle).get_buffer();
             const VkBuffer indexBuffer = get_buffer_by_handle(mesh.indexesHandle).get_buffer();
-            const UInt64 normalsOffset = mesh.positions.size() * sizeof(mesh.positions[0]);
-            const UInt64 uvsOffset = normalsOffset + mesh.normals.size() * sizeof(mesh.normals[0]);
-            Array<VkBuffer, 3> vertexBuffers = { vertexBuffer, vertexBuffer, vertexBuffer };
-            Array<VkDeviceSize, 3> offsets = { 0, normalsOffset, uvsOffset };
-            vkCmdBindVertexBuffers(commandBuffer, 0, 3, vertexBuffers.data(), offsets.data());
+
+            Array<VkBuffer, 3> vertexBuffers = { positionsBuffer, normalsBuffer, uvsBuffer };
+            Array<VkDeviceSize, 3> offsets = { 0, 0, 0 };
+            vkCmdBindVertexBuffers(commandBuffer, 
+                                   0, 
+                                   vertexBuffers.size(), 
+                                   vertexBuffers.data(), 
+                                   offsets.data());
             vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
             MeshPushConstant pc{};

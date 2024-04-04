@@ -1,0 +1,27 @@
+#version 460 core
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout (rgba32f, binding = 0) writeonly uniform image2D rayDirections;
+layout (rgba32f, binding = 1) writeonly uniform image2D accumulated;
+
+uniform vec3 cameraPosition;
+uniform vec3 originPixel;
+uniform vec3 pixelDeltaU;
+uniform vec3 pixelDeltaV;
+uniform ivec2 imageSize;
+
+void main()
+{
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    if (gid.x >= imageSize.x || gid.y >= imageSize.y)
+	{
+        return;
+    }
+	
+	vec3 pixelPosition = originPixel + float(gid.x) * pixelDeltaU + float(gid.y) * pixelDeltaV;
+	vec3 direction = normalize(pixelPosition - cameraPosition);
+	vec4 pixel = vec4(direction, 1.0f);
+	
+    imageStore(rayDirections, gid, pixel);
+    imageStore(accumulated, gid, vec4(0.0f));
+}
