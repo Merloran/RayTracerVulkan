@@ -1,5 +1,5 @@
 #version 460
-#extension GL_ARB_bindless_texture : enable
+#extension GL_EXT_nonuniform_qualifier : require
 #define EPSILON 0.00000095367431640625f
 #define PI 3.1415926535897932384626433832795f
 #define ONE_OVER_PI 1.0f / 3.1415926535897932384626433832795f
@@ -87,24 +87,27 @@ layout(std430, binding = 4) readonly buffer EmissionTriangles
     uint emissionTriangles[];
 };
 
-layout(set = 2, binding = 0) uniform sampler2D textures[];
+layout(set = 1, binding = 0) uniform sampler2D textures[];
 
-layout (rgba32f, binding = 0) readonly uniform image2D rayDirections;
-layout (rgba32f, binding = 1) uniform image2D accumulated;
+layout (rgba32f, set = 2, binding = 0) readonly uniform image2D rayDirections;
+layout (rgba32f, set = 3, binding = 1) uniform image2D accumulated;
 
-uniform vec3  backgroundColor;
-uniform vec3  cameraPosition;
-uniform vec3  pixelDeltaU;
-uniform vec3  pixelDeltaV;
-uniform vec2  viewBounds;
-uniform ivec2 imageSize;
-uniform float time;
-uniform int   frameCount;
-uniform int   maxBouncesCount;
-uniform int   trianglesCount;
-uniform int   emissionTrianglesCount;
-uniform int   rootId;
-uniform int   environmentMapId;
+layout( push_constant ) uniform PushConstants
+{
+	vec3  backgroundColor;
+	vec3  cameraPosition;
+	vec3  pixelDeltaU;
+	vec3  pixelDeltaV;
+	vec2  viewBounds;
+	ivec2 imageSize;
+	float time;
+	int   frameCount;
+	int   maxBouncesCount;
+	int   trianglesCount;
+	int   emissionTrianglesCount;
+	int   rootId;
+	int   environmentMapId;
+} constants;
 
 vec2 seed;
 

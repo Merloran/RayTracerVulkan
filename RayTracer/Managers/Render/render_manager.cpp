@@ -262,47 +262,66 @@ Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
     memcpy(data, texture.data, textureSize);
     vkUnmapMemory(logicalDevice.get_device(), stagingBuffer.get_memory());
 
-    texture.image.id = Int32(images.size());
-    Image& textureImage = images.emplace_back();
-
-    VkFormat format;
-    if (texture.channels == 3)
+    
+	if (texture.channels != 4)
     {
-        format = VK_FORMAT_R8G8B8_SRGB;
-    }
-    else if (texture.channels == 4)
-    {
-
-        format = VK_FORMAT_R8G8B8A8_SRGB;
-    }
-    else {
         SPDLOG_ERROR("Not supported channels count: {} in texture: {}", texture.channels, texture.name);
+        stagingBuffer.clear(logicalDevice, nullptr);
         return;
     }
+
+    texture.image.id = Int32(images.size());
+    Image& textureImage = images.emplace_back();
 
     textureImage.create(physicalDevice,
                         logicalDevice,
                         texture.size,
                         mipLevels,
                         VK_SAMPLE_COUNT_1_BIT,
-                        format,
+                        VK_FORMAT_R8G8B8A8_SRGB,
                         VK_IMAGE_TILING_OPTIMAL,
                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                        VK_IMAGE_ASPECT_COLOR_BIT,
                         nullptr);
-
-    transition_image_layout(textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    copy_buffer_to_image(stagingBuffer, textureImage);
-
-    if (mipLevels > 1)
-    {
-        generate_mipmaps(textureImage);
-    }
-
-    textureImage.create_view(logicalDevice, VK_IMAGE_ASPECT_COLOR_BIT, nullptr);
     textureImage.create_sampler(physicalDevice, logicalDevice, nullptr);
 
+    transition_image_layout(textureImage,
+                            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 
+                            VK_PIPELINE_STAGE_TRANSFER_BIT,
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    copy_buffer_to_image(stagingBuffer, textureImage);
+    
+    generate_mipmaps(textureImage);
+
     stagingBuffer.clear(logicalDevice, nullptr);
+}
+
+Handle<Image> SRenderManager::create_image(const UVector2& size, VkFormat format, VkImageUsageFlagBits usage, VkImageTiling tiling, UInt32 mipLevels)
+{
+	const Handle<Image> handle = { Int32(images.size()) };
+    Image& image = images.emplace_back();
+
+    image.create(physicalDevice,
+                 logicalDevice,
+                 size,
+                 mipLevels,
+                 VK_SAMPLE_COUNT_1_BIT,
+                 format,
+                 tiling,
+                 usage,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                 VK_IMAGE_ASPECT_COLOR_BIT,
+                 nullptr);
+
+    image.create_sampler(physicalDevice, logicalDevice, nullptr);
+
+    return handle;
+}
+
+Void SRenderManager::resize_image(const UVector2& newSize, Handle<Image> image)
+{
+    get_image_by_handle(image).resize(physicalDevice, logicalDevice, newSize, nullptr);
 }
 
 Void SRenderManager::setup_graphics_descriptors(const DynamicArray<Texture>& textures)
@@ -327,7 +346,7 @@ Void SRenderManager::setup_graphics_descriptors(const DynamicArray<Texture>& tex
     {
         Image& image = get_image_by_handle(texture.image);
         VkDescriptorImageInfo& imageInfo = imageInfos.emplace_back();
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageLayout = image.get_current_layout();
         imageInfo.imageView   = image.get_view();
         imageInfo.sampler     = image.get_sampler();
     }
@@ -465,6 +484,21 @@ Void SRenderManager::render(Camera& camera, const DynamicArray<Model>& models, F
     isFrameEven = !isFrameEven;
 }
 
+VkSurfaceKHR SRenderManager::get_surface() const
+{
+    return surface;
+}
+
+const PhysicalDevice& SRenderManager::get_physical_device() const
+{
+    return physicalDevice;
+}
+
+const LogicalDevice& SRenderManager::get_logical_device() const
+{
+    return logicalDevice;
+}
+
 Void SRenderManager::create_vulkan_instance()
 {
     if constexpr (DebugMessenger::ENABLE_VALIDATION_LAYERS)
@@ -600,7 +634,7 @@ Void SRenderManager::create_graphics_descriptors()
     for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         descriptorPool.add_binding("CameraDataLayout" + std::to_string(i),
-                                   i,
+                                   UInt32(i),
                                    0,
                                    VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                                    1,
@@ -614,8 +648,8 @@ Void SRenderManager::create_graphics_descriptors()
 
     DynamicArray<VkPushConstantRange> pushConstants;
     VkPushConstantRange& pushConstant = pushConstants.emplace_back();
-    pushConstant.size = sizeof(MeshPushConstant);
-    pushConstant.offset = 0;
+    pushConstant.size       = sizeof(MeshPushConstant);
+    pushConstant.offset     = 0;
     pushConstant.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
 
     descriptorPool.set_push_constants(pushConstants);
@@ -786,15 +820,6 @@ Void SRenderManager::recreate_swapchain()
 
 Void SRenderManager::generate_mipmaps(Image& image)
 {
-    // Check if image format supports linear blitting
-    VkFormatProperties formatProperties;
-    vkGetPhysicalDeviceFormatProperties(physicalDevice.get_device(), image.get_format(), &formatProperties);
-
-    if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
-    {
-        throw std::runtime_error("texture image format does not support linear blitting!");
-    }
-
     VkCommandBuffer commandBuffer;
     begin_quick_commands(commandBuffer);
 
@@ -893,6 +918,8 @@ Void SRenderManager::generate_mipmaps(Image& image)
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
+    image.set_current_layout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
     vkCmdPipelineBarrier(commandBuffer,
                          VK_PIPELINE_STAGE_TRANSFER_BIT, 
                          VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 
@@ -934,13 +961,12 @@ Void SRenderManager::copy_buffer_to_image(const Buffer& buffer, Image& image)
     end_quick_commands(commandBuffer);
 }
 
-Void SRenderManager::transition_image_layout(Image& image, VkImageLayout newLayout)
+Void SRenderManager::transition_image_layout(Image& image, VkPipelineStageFlags sourceStage, VkPipelineStageFlags destinationStage, VkImageLayout newLayout)
 {
     VkCommandBuffer commandBuffer;
     begin_quick_commands(commandBuffer);
 
     const VkImageLayout oldLayout = image.get_current_layout();
-    image.set_current_layout(newLayout);
     VkImageMemoryBarrier barrier{};
     barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout                       = oldLayout;
@@ -948,7 +974,10 @@ Void SRenderManager::transition_image_layout(Image& image, VkImageLayout newLayo
     barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
     barrier.image                           = image.get_image();
-
+    barrier.subresourceRange.baseMipLevel   = 0;
+    barrier.subresourceRange.levelCount     = UInt32(image.get_mip_levels());
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount     = 1;
     if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) 
     {
         barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -959,40 +988,103 @@ Void SRenderManager::transition_image_layout(Image& image, VkImageLayout newLayo
     } else {
         barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     }
-    barrier.subresourceRange.baseMipLevel   = 0;
-    barrier.subresourceRange.levelCount     = UInt32(image.get_mip_levels());
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount     = 1;
 
-    VkPipelineStageFlags sourceStage;
-    VkPipelineStageFlags destinationStage;
-
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) 
-    {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    switch (oldLayout)
+	{
+		case VK_IMAGE_LAYOUT_UNDEFINED:
+	    {
+		    barrier.srcAccessMask = 0;
+    		break;
+	    }
+        case VK_IMAGE_LAYOUT_GENERAL:
+        {
+            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;// | VK_ACCESS_SHADER_READ_BIT; //TODO: think of it
+            break;
+        }
+		case VK_IMAGE_LAYOUT_PREINITIALIZED:
+		{
+			barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+			break;
+		}
+		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+		{
+			barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+			break;
+		}
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+		{
+			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			break;
+		}
+		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+		{
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+			break;
+		}
+		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+		{
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			break;
+		}
+		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		{
+			barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+			break;
+		}
+		default:
+		{
+			SPDLOG_ERROR("Not supported old layout transition: {}", magic_enum::enum_name(oldLayout));
+			end_quick_commands(commandBuffer);
+			return;
+		}
     }
-    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) 
-    {
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-        sourceStage      = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    }
-    else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) 
-    {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    // Destination access mask controls the dependency for the new image layout.
+    switch (newLayout)
+	{
+		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+		{
+		    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		    break;
+		}
+	    case VK_IMAGE_LAYOUT_GENERAL:
+		{
+	        barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+	        break;
+		}
+		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+		{
+		    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		    break;
+		}
+		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+		{
+		    barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		    break;
+		}
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+		{
+		    barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		    break;
+		}
+		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		{
+		    if (barrier.srcAccessMask == 0) 
+            {
+			    barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+		    }
 
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    } else {
-        throw std::invalid_argument("unsupported layout transition!");
+		    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		    break;
+		}
+		default:
+	    {
+		    SPDLOG_ERROR("Not supported new layout transition: {}", magic_enum::enum_name(newLayout));
+    		end_quick_commands(commandBuffer);
+    		return;
+	    }
     }
+    image.set_current_layout(newLayout);
 
     vkCmdPipelineBarrier(commandBuffer,
                          sourceStage,
@@ -1056,7 +1148,7 @@ Void SRenderManager::end_quick_commands(VkCommandBuffer commandBuffer)
 
 Bool SRenderManager::has_stencil_component(VkFormat format)
 {
-    return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+    return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT || format == VK_FORMAT_D16_UNORM_S8_UINT;
 }
 
 Void SRenderManager::s_check_vk_result(VkResult error)

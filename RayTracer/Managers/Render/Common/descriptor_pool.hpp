@@ -39,7 +39,7 @@ public:
 					 UInt32 binding,
 					 VkDescriptorType descriptorType,
 					 UInt32 descriptorCount,
-					 VkShaderStageFlagBits stageFlags,
+					 VkShaderStageFlags stageFlags,
 					 VkDescriptorBindingFlags bindingFlags = 0,
 					 VkDescriptorSetLayoutCreateFlags layoutFlags = 0,
 					 VkDescriptorPoolCreateFlags poolFlags = 0);

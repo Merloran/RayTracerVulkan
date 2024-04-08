@@ -66,10 +66,10 @@ public:
 
 	[[nodiscard]]
 	const DynamicArray<Model>    &get_models()    const;
-	DynamicArray<Mesh>&			  get_meshes();
+	DynamicArray<Mesh>           &get_meshes();
 	[[nodiscard]]
 	const DynamicArray<Material> &get_materials() const;
-	DynamicArray<Texture>  &get_textures();
+	DynamicArray<Texture>		 &get_textures();
 
 	Void shutdown();
 

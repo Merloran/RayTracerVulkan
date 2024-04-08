@@ -34,6 +34,8 @@ public:
                                    VkImageTiling tiling,
                                    VkFormatFeatureFlags features) const;
 	[[nodiscard]]
+    VkFormatProperties get_format_properties(VkFormat format) const;
+	[[nodiscard]]
     UInt32 find_memory_type(UInt32 typeFilter, VkMemoryPropertyFlags properties) const;
 
     template <typename FeatureType>

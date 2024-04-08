@@ -3,6 +3,9 @@
 #include "../Resource/Common/texture.hpp"
 #include "../Render/Common/shader.hpp"
 #include "../Render/Common/descriptor_pool.hpp"
+#include "../Render/Common/pipeline.hpp"
+#include "../Render/Common/render_pass.hpp"
+#include "../Render/Common/swapchain.hpp"
 #include "Common/bvh_builder.hpp"
 
 
@@ -14,6 +17,32 @@ struct GPUMaterial
 	Int32 metalness;
 	Int32 emission;
 	Float32 indexOfRefraction;
+};
+
+struct RayGenerationConstants
+{
+	FVector3 cameraPosition;
+	FVector3 originPixel;
+	FVector3 pixelDeltaU;
+	FVector3 pixelDeltaV;
+	IVector2 imageSize;
+};
+
+struct RaytraceConstants
+{
+	FVector3 backgroundColor;
+	FVector3 cameraPosition;
+	FVector3 pixelDeltaU;
+	FVector3 pixelDeltaV;
+	FVector2 viewBounds;
+	Float32  time;
+	IVector2 imageSize;
+	Int32	 frameCount;
+	Int32	 maxBouncesCount;
+	Int32	 trianglesCount;
+	Int32	 emissionTrianglesCount;
+	Int32	 rootId;
+	Int32	 environmentMapId;
 };
 
 struct Vertex;
@@ -46,12 +75,16 @@ private:
 	SRaytraceManager() = default;
 	~SRaytraceManager() = default;
 	static constexpr IVector2 WORKGROUP_SIZE{ 16, 16 };
+	DescriptorPool pool;
+	Pipeline rayGenerationPipeline, raytracePipeline, postprocessPipeline;
+	RenderPass postprocessPass;
+	Swapchain postprocessSwapchain;
 
-	Handle<Shader> rayGeneration, rayTrace, screenV, screenF;
-	Handle<Buffer> vertexesHandle, indexesHandle, materialsHandle, emissionTrianglesHandle;
+	Handle<Shader> rayGeneration, raytrace, screenV, screenF;
+	Handle<Buffer> vertexesHandle, indexesHandle, materialsHandle, bvhHandle, emissionTrianglesHandle;
 	BVHBuilder bvh;
 	DescriptorPool descriptorPool;
-	Texture screenTexture, directionTexture;
+	Texture accumulationTexture, directionTexture;
 
 	DynamicArray<GPUMaterial> materials;
 	DynamicArray<Vertex> vertexes;
@@ -66,5 +99,7 @@ private:
 
 	Void ray_trace(Camera& camera);
 	Void generate_rays(Camera& camera);
+	Void create_pipelines();
 	Void create_descriptors();
+	Void setup_descriptors();
 };

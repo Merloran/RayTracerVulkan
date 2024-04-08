@@ -57,11 +57,28 @@ public:
 	Void create_mesh_buffers(Mesh& mesh);
 	Void generate_texture_images(DynamicArray<Texture>& textures);
 	Void create_texture_image(Texture& texture, UInt32 mipLevels = 1);
+	Handle<Image> create_image(const UVector2& size, 
+							   VkFormat format, 
+							   VkImageUsageFlagBits usage, 
+							   VkImageTiling tiling,
+							   UInt32 mipLevels = 1);
+	Void transition_image_layout(Image& image,
+								 VkPipelineStageFlags sourceStage,
+								 VkPipelineStageFlags destinationStage,
+								 VkImageLayout newLayout);
+	Void resize_image(const UVector2& newSize, Handle<Image> image);
 	Void setup_graphics_descriptors(const DynamicArray<Texture>& textures);
 	Void reload_shaders();
 	
 	Void render_imgui();
 	Void render(Camera& camera, const DynamicArray<Model>& models, Float32 time);
+
+	[[nodiscard]]
+	VkSurfaceKHR get_surface() const;
+	[[nodiscard]]
+	const PhysicalDevice& get_physical_device() const;
+	[[nodiscard]]
+	const LogicalDevice& get_logical_device() const;
 
 	[[nodiscard]]
 	const Handle<Shader>& get_shader_handle_by_name(const String& name)  const;
@@ -147,7 +164,7 @@ private:
 
 	VkInstance instance;
 	DebugMessenger debugMessenger;
-	VkSurfaceKHR surface; //TODO: Maybe move to display manager
+	VkSurfaceKHR surface;
 
 	PhysicalDevice physicalDevice;
 	LogicalDevice logicalDevice;
@@ -165,20 +182,16 @@ private:
 	DynamicArray<Buffer> buffers; // Contains index and vertex data buffers for meshes
 	DynamicArray<Buffer> uniformBuffers;
 	DynamicArray<Image> images;
-
-	//DynamicArray<VkSemaphore> computeFinishedSemaphores;
+	
 	DynamicArray<VkSemaphore> imageAvailableSemaphores;
 	DynamicArray<VkSemaphore> renderFinishedSemaphores;
-	//DynamicArray<VkFence>     computeInFlightFences;
 	DynamicArray<VkFence>	  inFlightFences;
 
 	Bool isFrameEven;
-
 	VkDescriptorPool imguiDescriptorPool;
 
 
 	Void create_vulkan_instance();
-	//TODO: Maybe move to display manager
 	DynamicArray<const Char*> get_required_extensions();
 	Void create_surface();
 	Void create_command_pool(VkCommandPoolCreateFlagBits flags);
@@ -191,7 +204,6 @@ private:
 
 	Void generate_mipmaps(Image& image);
 	Void copy_buffer_to_image(const Buffer& buffer, Image& image);
-	Void transition_image_layout(Image& image, VkImageLayout newLayout);
 	Void copy_buffer(const Buffer& source, Buffer& destination);
 	Void begin_quick_commands(VkCommandBuffer &commandBuffer);
 	Void end_quick_commands(VkCommandBuffer commandBuffer);

@@ -14,22 +14,14 @@ public:
 	Void create(const PhysicalDevice& physicalDevice,
 				const LogicalDevice& logicalDevice,
 				const Swapchain& swapchain,
-				const VkAllocationCallbacks* allocator);
+				const VkAllocationCallbacks* allocator, 
+				Bool depthTest = true,
+				Bool multiSampling = true);
 
 	Void create_images(const PhysicalDevice& physicalDevice,
 					   const LogicalDevice& logicalDevice,
 					   const Swapchain& swapchain,
 					   const VkAllocationCallbacks* allocator);
-
-	Void create_color_image(const PhysicalDevice& physicalDevice, 
-							const LogicalDevice& logicalDevice, 
-							const Swapchain& swapchain, 
-							const VkAllocationCallbacks* allocator);
-
-	Void create_depth_image(const PhysicalDevice& physicalDevice, 
-							const LogicalDevice& logicalDevice, 
-							const Swapchain& swapchain, 
-							const VkAllocationCallbacks* allocator);
 
 	[[nodiscard]]
 	const VkRenderPass &get_render_pass() const;

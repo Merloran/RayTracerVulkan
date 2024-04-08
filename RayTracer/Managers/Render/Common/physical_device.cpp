@@ -139,6 +139,13 @@ VkFormat PhysicalDevice::find_supported_format(const std::vector<VkFormat>& cand
     throw std::runtime_error("failed to find supported format!");
 }
 
+VkFormatProperties PhysicalDevice::get_format_properties(VkFormat format) const
+{
+    VkFormatProperties properties;
+    vkGetPhysicalDeviceFormatProperties(device, format, &properties);
+    return properties;
+}
+
 UInt32 PhysicalDevice::find_memory_type(UInt32 typeFilter, VkMemoryPropertyFlags properties) const
 {
     VkPhysicalDeviceMemoryProperties memProperties;

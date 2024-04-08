@@ -6,7 +6,7 @@
 
 //TODO: remove exceptions!
 
-Void DescriptorPool::add_binding(const String& layoutName, UInt32 setNumber, UInt32 binding, VkDescriptorType descriptorType, UInt32 descriptorCount, VkShaderStageFlagBits stageFlags, VkDescriptorBindingFlags bindingFlags, VkDescriptorSetLayoutCreateFlags layoutFlags, VkDescriptorPoolCreateFlags poolFlags)
+Void DescriptorPool::add_binding(const String& layoutName, UInt32 setNumber, UInt32 binding, VkDescriptorType descriptorType, UInt32 descriptorCount, VkShaderStageFlags stageFlags, VkDescriptorBindingFlags bindingFlags, VkDescriptorSetLayoutCreateFlags layoutFlags, VkDescriptorPoolCreateFlags poolFlags)
 {
     if (setNumber + 1 > layoutData.size())
     {

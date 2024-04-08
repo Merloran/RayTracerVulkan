@@ -16,15 +16,17 @@ public:
 	            VkImageTiling tiling,
 	            VkImageUsageFlags usage,
 	            VkMemoryPropertyFlags properties,
+				VkImageAspectFlags aspectFlags,
 				const VkAllocationCallbacks* allocator);
-
-	Void create_view(const LogicalDevice& logicalDevice,
-					 VkImageAspectFlags aspectFlags,
-					 const VkAllocationCallbacks* allocator);
 
 	Void create_sampler(const PhysicalDevice& physicalDevice,
 						const LogicalDevice& logicalDevice,
 						const VkAllocationCallbacks* allocator);
+
+	Void resize(const PhysicalDevice& physicalDevice,
+				const LogicalDevice& logicalDevice,
+				const UVector2& size,
+				const VkAllocationCallbacks* allocator);
 
 	VkImage get_image() const;
 	VkFormat get_format() const;
@@ -47,12 +49,20 @@ public:
 private:
 	VkImage image;
 	VkDeviceMemory memory;
-	VkImageView view = nullptr;
+	VkImageView view;
 	VkSampler sampler = nullptr;
 	UVector2 size;
-	VkSampleCountFlagBits samplesCount;
-	VkImageLayout currentLayout;
 	VkFormat format;
+	VkImageTiling tiling;
+	VkImageUsageFlags usage;
+	VkImageLayout currentLayout;
+	VkImageAspectFlags aspectFlags;
+	VkMemoryPropertyFlags properties;
+	VkSampleCountFlagBits samplesCount;
 	UInt32 mipLevels;
+
+	Void create_view(const LogicalDevice& logicalDevice,
+					 VkImageAspectFlags aspectFlags,
+					 const VkAllocationCallbacks* allocator);
 };
 

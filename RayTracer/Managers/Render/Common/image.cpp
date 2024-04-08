@@ -3,19 +3,29 @@
 #include "physical_device.hpp"
 #include "logical_device.hpp"
 
-Void Image::create(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const UVector2& size, UInt32 mipLevels, VkSampleCountFlagBits samplesCount, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, const VkAllocationCallbacks* allocator)
+Void Image::create(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const UVector2& size, UInt32 mipLevels, VkSampleCountFlagBits samplesCount, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImageAspectFlags aspectFlags, const VkAllocationCallbacks* allocator)
 {
-    this->mipLevels    = mipLevels;
+    if (!(physicalDevice.get_format_properties(format).optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
+    {
+        SPDLOG_ERROR("Texture iamge format not support linear blitting, mip levels set to 1");
+        this->mipLevels = 1;
+    } else {
+        this->mipLevels = mipLevels;
+    }
+
     this->format       = format;
     this->samplesCount = samplesCount;
     this->size         = size;
+    this->usage        = usage;
+    this->tiling       = tiling;
+    this->properties   = properties;
     VkImageCreateInfo imageInfo{};
     imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType     = VK_IMAGE_TYPE_2D;
     imageInfo.extent.width  = size.x;
     imageInfo.extent.height = size.y;
     imageInfo.extent.depth  = 1;
-    imageInfo.mipLevels     = mipLevels;
+    imageInfo.mipLevels     = this->mipLevels;
     imageInfo.arrayLayers   = 1;
     imageInfo.format        = format;
     imageInfo.tiling        = tiling;
@@ -45,10 +55,13 @@ Void Image::create(const PhysicalDevice& physicalDevice, const LogicalDevice& lo
     }
 
     vkBindImageMemory(logicalDevice.get_device(), image, memory, 0);
+
+    create_view(logicalDevice, aspectFlags, allocator);
 }
 
 Void Image::create_view(const LogicalDevice& logicalDevice, VkImageAspectFlags aspectFlags, const VkAllocationCallbacks* allocator)
 {
+    this->aspectFlags = aspectFlags;
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image                           = image;
@@ -69,8 +82,6 @@ Void Image::create_view(const LogicalDevice& logicalDevice, VkImageAspectFlags a
 Void Image::create_sampler(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
     VkSamplerCreateInfo samplerInfo{};
-    const VkPhysicalDeviceProperties &properties = physicalDevice.get_properties();
-
     samplerInfo.sType                   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerInfo.magFilter               = VK_FILTER_LINEAR;
     samplerInfo.minFilter               = VK_FILTER_LINEAR;
@@ -78,7 +89,7 @@ Void Image::create_sampler(const PhysicalDevice& physicalDevice, const LogicalDe
     samplerInfo.addressModeV            = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     samplerInfo.addressModeW            = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     samplerInfo.anisotropyEnable        = VK_TRUE;
-    samplerInfo.maxAnisotropy           = properties.limits.maxSamplerAnisotropy;
+    samplerInfo.maxAnisotropy           = physicalDevice.get_properties().limits.maxSamplerAnisotropy;
     samplerInfo.borderColor             = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
     samplerInfo.unnormalizedCoordinates = VK_FALSE;
     samplerInfo.compareEnable           = VK_FALSE;
@@ -92,6 +103,16 @@ Void Image::create_sampler(const PhysicalDevice& physicalDevice, const LogicalDe
     {
         throw std::runtime_error("failed to create sampler!");
     }
+}
+
+Void Image::resize(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const UVector2& size, const VkAllocationCallbacks* allocator)
+{
+    // To prevent clearing sampler to reuse it
+	const VkSampler holder = sampler;
+    sampler = nullptr;
+    clear(logicalDevice, allocator);
+    create(physicalDevice, logicalDevice, size, mipLevels, samplesCount, format, tiling, usage, properties, aspectFlags, allocator);
+    sampler = holder;
 }
 
 VkImage Image::get_image() const
@@ -161,10 +182,7 @@ Void Image::clear(const LogicalDevice& logicalDevice, const VkAllocationCallback
     {
         vkDestroySampler(logicalDevice.get_device(), sampler, allocator);
     }
-    if (view != nullptr)
-    {
-        vkDestroyImageView(logicalDevice.get_device(), view, allocator);
-    }
+    vkDestroyImageView(logicalDevice.get_device(), view, allocator);
     vkDestroyImage(logicalDevice.get_device(), image, allocator);
     vkFreeMemory(logicalDevice.get_device(), memory, allocator);
 }

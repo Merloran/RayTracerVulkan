@@ -42,8 +42,8 @@ Void Swapchain::create(const LogicalDevice& logicalDevice, const PhysicalDevice&
     }
     else {
         createInfo.imageSharingMode      = VK_SHARING_MODE_EXCLUSIVE;
-        createInfo.queueFamilyIndexCount = 0; // Optional
-        createInfo.pQueueFamilyIndices   = nullptr; // Optional
+        createInfo.queueFamilyIndexCount = 0;
+        createInfo.pQueueFamilyIndices   = nullptr;
     }
     createInfo.preTransform     = capabilities.currentTransform;
     createInfo.compositeAlpha   = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -81,13 +81,13 @@ Void Swapchain::create_framebuffers(const LogicalDevice& logicalDevice, const Re
         views[0] = imageViews[i];
 
         VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = renderPass.get_render_pass();
+        framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass      = renderPass.get_render_pass();
         framebufferInfo.attachmentCount = UInt32(views.size());
-        framebufferInfo.pAttachments = views.data();
-        framebufferInfo.width = extent.x;
-        framebufferInfo.height = extent.y;
-        framebufferInfo.layers = 1;
+        framebufferInfo.pAttachments    = views.data();
+        framebufferInfo.width           = extent.x;
+        framebufferInfo.height          = extent.y;
+        framebufferInfo.layers          = 1;
 
         if (vkCreateFramebuffer(logicalDevice.get_device(), &framebufferInfo, allocator, &framebuffers[i]) != VK_SUCCESS)
         {
