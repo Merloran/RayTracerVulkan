@@ -6,15 +6,16 @@
 #include "image.hpp"
 
 
-Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator, Bool depthTest, Bool multiSampling)
+Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator, Bool depthTest)
 {
     DynamicArray<VkAttachmentDescription> attachments;
-
+    isDepthTest = depthTest;
+    Bool multiSampling = logicalDevice.is_multi_sampling_enabled();
     // Swapchain image
     VkAttachmentDescription colorAttachmentResolve{};
     colorAttachmentResolve.format         = swapchain.get_image_format();
     colorAttachmentResolve.samples        = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachmentResolve.loadOp         = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachmentResolve.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR; //VK_ATTACHMENT_LOAD_OP_DONT_CARE
     colorAttachmentResolve.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachmentResolve.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachmentResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -25,6 +26,7 @@ Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevic
     colorAttachmentResolveRef.attachment = UInt32(attachments.size());
     colorAttachmentResolveRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     attachments.push_back(colorAttachmentResolve);
+    clearValues.emplace_back().color = { {0.0f, 0.0f, 0.0f, 1.0f} };
     
     VkAttachmentDescription colorAttachment{};
     VkAttachmentReference colorAttachmentRef{};
@@ -91,9 +93,9 @@ Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevic
         dependency.dstStageMask  |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
         dependency.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     }
-
+    
     // Creation order of these images must match attachments order
-    create_images(physicalDevice, logicalDevice, swapchain, allocator);
+    create_attachments(physicalDevice, logicalDevice, swapchain, nullptr);
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassInfo.attachmentCount = UInt32(attachments.size());
@@ -109,33 +111,18 @@ Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevic
     }
 }
 
-Void RenderPass::create_images(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator)
+Void RenderPass::create_attachments(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator)
 {
-    //Color attachment
-    images.emplace_back().create(physicalDevice,
-                                 logicalDevice,
-                                 swapchain.get_extent(),
-                                 1,
-                                 logicalDevice.get_samples(),
-                                 swapchain.get_image_format(),
-                                 VK_IMAGE_TILING_OPTIMAL,
-                                 VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                 VK_IMAGE_ASPECT_COLOR_BIT,
-                                 allocator);
-
-    //Depth attachment
-    images.emplace_back().create(physicalDevice,
-                                 logicalDevice,
-                                 swapchain.get_extent(),
-                                 1,
-                                 logicalDevice.get_samples(),
-                                 physicalDevice.find_depth_format(),
-                                 VK_IMAGE_TILING_OPTIMAL,
-                                 VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                 VK_IMAGE_ASPECT_DEPTH_BIT,
-                                 nullptr);
+    if (logicalDevice.is_multi_sampling_enabled())
+    {
+        create_color_attachment(physicalDevice, logicalDevice, swapchain, allocator);
+        clearValues.emplace_back().color = { {0.0f, 0.0f, 0.0f, 1.0f} };
+    }
+    if (isDepthTest)
+    {
+        create_depth_attachment(physicalDevice, logicalDevice, swapchain, allocator);
+        clearValues.emplace_back().depthStencil = { 1.0f, 0 };
+    }
 }
 
 const VkRenderPass& RenderPass::get_render_pass() const
@@ -146,6 +133,16 @@ const VkRenderPass& RenderPass::get_render_pass() const
 const DynamicArray<Image>& RenderPass::get_images() const
 {
     return images;
+}
+
+const DynamicArray<VkClearValue>& RenderPass::get_clear_values() const
+{
+    return clearValues;
+}
+
+Bool RenderPass::is_depth_test_enabled() const
+{
+    return isDepthTest;
 }
 
 Void RenderPass::clear_images(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
@@ -162,4 +159,34 @@ Void RenderPass::clear(const LogicalDevice& logicalDevice, const VkAllocationCal
     clear_images(logicalDevice, allocator);
 
     vkDestroyRenderPass(logicalDevice.get_device(), renderPass, allocator);
+}
+
+Void RenderPass::create_depth_attachment(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator)
+{
+    images.emplace_back().create(physicalDevice,
+                                 logicalDevice,
+                                 swapchain.get_extent(),
+                                 1,
+                                 logicalDevice.get_samples(),
+                                 physicalDevice.find_depth_format(),
+                                 VK_IMAGE_TILING_OPTIMAL,
+                                 VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                 VK_IMAGE_ASPECT_DEPTH_BIT,
+                                 nullptr);
+}
+
+Void RenderPass::create_color_attachment(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator)
+{
+    images.emplace_back().create(physicalDevice,
+                                 logicalDevice,
+                                 swapchain.get_extent(),
+                                 1,
+                                 logicalDevice.get_samples(),
+                                 swapchain.get_image_format(),
+                                 VK_IMAGE_TILING_OPTIMAL,
+                                 VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                 VK_IMAGE_ASPECT_COLOR_BIT,
+                                 allocator);
 }

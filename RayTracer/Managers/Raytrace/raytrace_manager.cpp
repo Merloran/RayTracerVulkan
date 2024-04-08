@@ -113,12 +113,12 @@ Void SRaytraceManager::startup()
 
 	bvh.create_tree(vertexes, indexes);
 
-
 	vertexesHandle			= renderManager.create_static_buffer(vertexes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	indexesHandle			= renderManager.create_static_buffer(indexes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	materialsHandle			= renderManager.create_static_buffer(materials, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	emissionTrianglesHandle = renderManager.create_static_buffer(emissionTriangles, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	bvhHandle				= renderManager.create_static_buffer(bvh.hierarchy, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
 
 	accumulationTexture.image = renderManager.create_image(displayManager.get_framebuffer_size(),
 														   VK_FORMAT_R32G32B32A32_SFLOAT,
@@ -133,6 +133,7 @@ Void SRaytraceManager::startup()
 										  VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
 										  VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
+
 	directionTexture.image = renderManager.create_image(displayManager.get_framebuffer_size(),
 														VK_FORMAT_R32G32B32A32_SFLOAT,
 														VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -145,6 +146,10 @@ Void SRaytraceManager::startup()
 										  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 										  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 										  VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
+
+	create_descriptors();
+	create_pipelines();
+	setup_descriptors();
 }
 
 Void SRaytraceManager::update(Camera &camera, Float32 deltaTime)
@@ -265,16 +270,15 @@ Void SRaytraceManager::create_pipelines()
 						   renderManager.get_logical_device(), 
 						   postprocessSwapchain, 
 						   nullptr, 
-						   false, 
 						   false);
 
 	postprocessSwapchain.create_framebuffers(renderManager.get_logical_device(), postprocessPass, nullptr);
 
-	postprocessPipeline.create_simple_pipeline(descriptorPool, 
-											   postprocessPass, 
-											   shaders, 
-											   renderManager.get_logical_device(), 
-											   nullptr);
+	postprocessPipeline.create_graphics_pipeline(descriptorPool, 
+											     postprocessPass, 
+											     shaders, 
+											     renderManager.get_logical_device(), 
+											     nullptr);
 }
 
 Void SRaytraceManager::create_descriptors()
@@ -460,4 +464,11 @@ Void SRaytraceManager::refresh()
 
 Void SRaytraceManager::shutdown()
 {
+	SRenderManager& renderManager = SRenderManager::get();
+	descriptorPool.clear(renderManager.get_logical_device(), nullptr);
+	postprocessSwapchain.clear(renderManager.get_logical_device(), nullptr);
+	postprocessPass.clear(renderManager.get_logical_device(), nullptr);
+	postprocessPipeline.clear(renderManager.get_logical_device(), nullptr);
+	rayGenerationPipeline.clear(renderManager.get_logical_device(), nullptr);
+	raytracePipeline.clear(renderManager.get_logical_device(), nullptr);
 }

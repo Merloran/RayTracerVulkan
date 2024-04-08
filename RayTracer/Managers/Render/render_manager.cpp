@@ -39,7 +39,7 @@ Void SRenderManager::startup()
     create_surface();
     physicalDevice.select_physical_device(instance, surface);
     logicalDevice.create(physicalDevice, debugMessenger, nullptr);
-
+    // logicalDevice.disable_multi_sampling();
     //Shaders should be created after logical device
     Handle<Shader> vert = load_shader(SHADERS_PATH + "Shader.vert", EShaderType::Vertex);
     Handle<Shader> frag = load_shader(SHADERS_PATH + "Shader.frag", EShaderType::Fragment);
@@ -694,10 +694,7 @@ Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32
     }
 
     VkRenderPassBeginInfo renderPassInfo{};
-    std::array<VkClearValue, 3> clearValues{};
-    clearValues[0].color        = { {0.0f, 0.0f, 0.0f, 1.0f} };
-    clearValues[1].color        = { {0.0f, 0.0f, 0.0f, 1.0f} };
-    clearValues[2].depthStencil = { 1.0f, 0 };
+    const DynamicArray<VkClearValue>& clearValues = renderPass.get_clear_values();
     const UVector2& extent = swapchain.get_extent();
     renderPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass        = renderPass.get_render_pass();
@@ -814,7 +811,7 @@ Void SRenderManager::recreate_swapchain()
     renderPass.clear_images(logicalDevice, nullptr);
 
     swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
-    renderPass.create_images(physicalDevice, logicalDevice, swapchain, nullptr);
+    renderPass.create_attachments(physicalDevice, logicalDevice, swapchain, nullptr);
     swapchain.create_framebuffers(logicalDevice, renderPass, nullptr);
 }
 

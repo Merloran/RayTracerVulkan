@@ -90,7 +90,7 @@ layout(std430, binding = 4) readonly buffer EmissionTriangles
 layout(set = 1, binding = 0) uniform sampler2D textures[];
 
 layout (rgba32f, set = 2, binding = 0) readonly uniform image2D rayDirections;
-layout (rgba32f, set = 3, binding = 1) uniform image2D accumulated;
+layout (rgba32f, set = 3, binding = 0) uniform image2D accumulated;
 
 layout( push_constant ) uniform PushConstants
 {

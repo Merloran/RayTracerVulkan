@@ -23,12 +23,6 @@ public:
 								  const LogicalDevice& logicalDevice,
 								  const VkAllocationCallbacks* allocator);
 
-	Void create_simple_pipeline(const DescriptorPool& descriptorPool,
-								const RenderPass& renderPass,
-								const DynamicArray<Shader>& shaders,
-								const LogicalDevice& logicalDevice,
-								const VkAllocationCallbacks* allocator);
-
 	Void create_compute_pipeline(const DescriptorPool& descriptorPool, 
 								 const Shader& shader,
 								 const LogicalDevice& logicalDevice,

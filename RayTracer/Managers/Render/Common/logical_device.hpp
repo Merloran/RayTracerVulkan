@@ -14,6 +14,10 @@ public:
     VkDevice get_device() const;
     VkSampleCountFlagBits get_samples() const;
 
+    [[nodiscard]]
+    Bool is_multi_sampling_enabled() const;
+    Void set_samples(VkSampleCountFlagBits samples);
+    Void disable_multi_sampling();
     VkQueue get_graphics_queue() const;
     VkQueue get_compute_queue() const;
     VkQueue get_present_queue() const;
