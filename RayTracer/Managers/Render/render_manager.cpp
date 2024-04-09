@@ -39,7 +39,6 @@ Void SRenderManager::startup()
     create_surface();
     physicalDevice.select_physical_device(instance, surface);
     logicalDevice.create(physicalDevice, debugMessenger, nullptr);
-    // logicalDevice.disable_multi_sampling();
     //Shaders should be created after logical device
     Handle<Shader> vert = load_shader(SHADERS_PATH + "Shader.vert", EShaderType::Vertex);
     Handle<Shader> frag = load_shader(SHADERS_PATH + "Shader.frag", EShaderType::Fragment);
@@ -56,7 +55,7 @@ Void SRenderManager::startup()
     create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     create_command_buffers(VK_COMMAND_BUFFER_LEVEL_PRIMARY, { "Graphics1", "Graphics2" });
 
-    renderPass.create(physicalDevice, logicalDevice, swapchain, nullptr);
+    renderPass.create(physicalDevice, logicalDevice, swapchain, nullptr, VK_SAMPLE_COUNT_16_BIT);
     swapchain.create_framebuffers(logicalDevice, renderPass, nullptr);
 
     graphicsPipeline.create_graphics_pipeline(descriptorPool, renderPass, shaders, logicalDevice, nullptr);
@@ -79,7 +78,7 @@ Void SRenderManager::setup_imgui()
 
     Array<VkDescriptorPoolSize, 1> poolSizes =
     {
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
+        {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}},
     };
     VkDescriptorPoolCreateInfo poolInfo = {};
     poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -103,7 +102,7 @@ Void SRenderManager::setup_imgui()
     initInfo.Subpass         = 0;
     initInfo.MinImageCount   = capabilities.minImageCount;
     initInfo.ImageCount      = capabilities.minImageCount + 1;
-    initInfo.MSAASamples     = logicalDevice.get_samples();
+    initInfo.MSAASamples     = renderPass.get_samples();
     initInfo.Allocator       = nullptr;
     initInfo.CheckVkResultFn = s_check_vk_result;
     ImGui_ImplVulkan_Init(&initInfo, renderPass.get_render_pass());

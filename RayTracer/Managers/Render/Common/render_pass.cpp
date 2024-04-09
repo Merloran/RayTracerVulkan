@@ -5,17 +5,27 @@
 #include "swapchain.hpp"
 #include "image.hpp"
 
+#include <magic_enum.hpp>
 
-Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator, Bool depthTest)
+
+Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator, VkSampleCountFlagBits samples, Bool depthTest)
 {
     DynamicArray<VkAttachmentDescription> attachments;
     isDepthTest = depthTest;
-    Bool multiSampling = logicalDevice.is_multi_sampling_enabled();
+    if (samples > physicalDevice.get_max_samples())
+    {
+        SPDLOG_ERROR("Sample count {} is not supported by physical device.", magic_enum::enum_name(samples));
+        this->samples = VK_SAMPLE_COUNT_1_BIT;
+        isMultiSampling = false;
+    } else {
+        isMultiSampling = !(samples & VK_SAMPLE_COUNT_1_BIT);
+        this->samples = samples;
+    }
     // Swapchain image
     VkAttachmentDescription colorAttachmentResolve{};
     colorAttachmentResolve.format         = swapchain.get_image_format();
     colorAttachmentResolve.samples        = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachmentResolve.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR; //VK_ATTACHMENT_LOAD_OP_DONT_CARE
+    colorAttachmentResolve.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachmentResolve.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachmentResolve.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachmentResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -30,10 +40,10 @@ Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevic
     
     VkAttachmentDescription colorAttachment{};
     VkAttachmentReference colorAttachmentRef{};
-    if (multiSampling)
+    if (isMultiSampling)
     {
 	    colorAttachment.format         = swapchain.get_image_format();
-	    colorAttachment.samples        = logicalDevice.get_samples();
+	    colorAttachment.samples        = this->samples;
 	    colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	    colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
 	    colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -44,14 +54,15 @@ Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevic
 	    colorAttachmentRef.attachment = UInt32(attachments.size());
 	    colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         attachments.push_back(colorAttachment);
+        clearValues.emplace_back().color = { {0.0f, 0.0f, 0.0f, 1.0f} };
     }
 
     VkAttachmentDescription depthAttachment{};
     VkAttachmentReference depthAttachmentRef{};
-    if (depthTest)
+    if (isDepthTest)
     {
 	    depthAttachment.format         = physicalDevice.find_depth_format();
-	    depthAttachment.samples        = logicalDevice.get_samples();
+	    depthAttachment.samples        = this->samples;
 	    depthAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	    depthAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	    depthAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -62,17 +73,18 @@ Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevic
         depthAttachmentRef.attachment = UInt32(attachments.size());
 	    depthAttachmentRef.layout     = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         attachments.push_back(depthAttachment);
+        clearValues.emplace_back().depthStencil = { 1.0f, 0 };
     }
 
 
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount    = 1;
-    if (depthTest)
+    if (isDepthTest)
     {
         subpass.pDepthStencilAttachment = &depthAttachmentRef;
     }
-    if (multiSampling)
+    if (isMultiSampling)
     {
         subpass.pColorAttachments   = &colorAttachmentRef;
         subpass.pResolveAttachments = &colorAttachmentResolveRef;
@@ -87,7 +99,7 @@ Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevic
     dependency.srcAccessMask = 0;
     dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    if (depthTest)
+    if (isDepthTest)
     {
         dependency.srcStageMask  |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
         dependency.dstStageMask  |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
@@ -113,19 +125,22 @@ Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevic
 
 Void RenderPass::create_attachments(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator)
 {
-    if (logicalDevice.is_multi_sampling_enabled())
+    if (isMultiSampling)
     {
         create_color_attachment(physicalDevice, logicalDevice, swapchain, allocator);
-        clearValues.emplace_back().color = { {0.0f, 0.0f, 0.0f, 1.0f} };
     }
     if (isDepthTest)
     {
         create_depth_attachment(physicalDevice, logicalDevice, swapchain, allocator);
-        clearValues.emplace_back().depthStencil = { 1.0f, 0 };
     }
 }
 
-const VkRenderPass& RenderPass::get_render_pass() const
+VkSampleCountFlagBits RenderPass::get_samples() const
+{
+    return samples;
+}
+
+VkRenderPass RenderPass::get_render_pass() const
 {
     return renderPass;
 }
@@ -143,6 +158,11 @@ const DynamicArray<VkClearValue>& RenderPass::get_clear_values() const
 Bool RenderPass::is_depth_test_enabled() const
 {
     return isDepthTest;
+}
+
+Bool RenderPass::is_multi_sampling_enabled() const
+{
+    return isMultiSampling;
 }
 
 Void RenderPass::clear_images(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
@@ -167,7 +187,7 @@ Void RenderPass::create_depth_attachment(const PhysicalDevice& physicalDevice, c
                                  logicalDevice,
                                  swapchain.get_extent(),
                                  1,
-                                 logicalDevice.get_samples(),
+                                 samples,
                                  physicalDevice.find_depth_format(),
                                  VK_IMAGE_TILING_OPTIMAL,
                                  VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
@@ -182,7 +202,7 @@ Void RenderPass::create_color_attachment(const PhysicalDevice& physicalDevice, c
                                  logicalDevice,
                                  swapchain.get_extent(),
                                  1,
-                                 logicalDevice.get_samples(),
+                                 samples,
                                  swapchain.get_image_format(),
                                  VK_IMAGE_TILING_OPTIMAL,
                                  VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,

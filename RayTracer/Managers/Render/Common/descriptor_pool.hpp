@@ -46,9 +46,16 @@ public:
 
 	Void create_layouts(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 
-	Void add_set(Handle<DescriptorLayoutData> layoutHandle, const DynamicArray<DescriptorResourceInfo>& resources, const String &name);
+	Handle<DescriptorSetData> add_set(Handle<DescriptorLayoutData> layoutHandle,
+									  const DynamicArray<DescriptorResourceInfo>& resources, 
+									  const String &name);
 
 	Void create_sets(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
+	Void update_set(const LogicalDevice& logicalDevice, 
+					const DescriptorResourceInfo& data, 
+					Handle<DescriptorSetData> handle, 
+					UInt32 arrayElement, 
+					UInt64 binding);
 
 	Void set_push_constants(const DynamicArray<VkPushConstantRange> &pushConstants);
 
@@ -58,7 +65,7 @@ public:
 	DescriptorLayoutData& get_layout_data_by_handle(const Handle<DescriptorLayoutData> handle);
 
 	[[nodiscard]]
-	const Handle<DescriptorSetData>& get_set_data_handle_by_name(const String& name)  const;
+	Handle<DescriptorSetData> get_set_data_handle_by_name(const String& name)  const;
 	DescriptorSetData& get_set_data_by_name(const String& name);
 	DescriptorSetData& get_set_data_by_handle(const Handle<DescriptorSetData> handle);
 

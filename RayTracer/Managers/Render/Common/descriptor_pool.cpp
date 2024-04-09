@@ -84,19 +84,19 @@ Void DescriptorPool::create_layouts(const LogicalDevice& logicalDevice, const Vk
     }
 }
 
-Void DescriptorPool::add_set(Handle<DescriptorLayoutData> layoutHandle, const DynamicArray<DescriptorResourceInfo>& resources, const String& name)
+Handle<DescriptorSetData> DescriptorPool::add_set(Handle<DescriptorLayoutData> layoutHandle, const DynamicArray<DescriptorResourceInfo>& resources, const String& name)
 {
     if (nameToIdSetData.find(name) != nameToIdSetData.end())
     {
         SPDLOG_ERROR("Failed to add descriptor set: {}. Descriptor set names must be unique.", name);
-        return;
+        return Handle<DescriptorSetData>::sNone;
     }
 
     const DescriptorLayoutData& layout = get_layout_data_by_handle(layoutHandle);
     if (!are_resources_compatible(layout, resources))
     {
         SPDLOG_ERROR("Fail to add descriptor set: {}", name);
-        return;
+        return Handle<DescriptorSetData>::sNone;
     }
 
     const Handle<DescriptorSetData> handle = { Int32(setData.size()) };
@@ -127,6 +127,7 @@ Void DescriptorPool::add_set(Handle<DescriptorLayoutData> layoutHandle, const Dy
 	    size.type            = write.descriptorType; 
         size.descriptorCount = write.descriptorCount;
     }
+    return handle;
 }
 
 Void DescriptorPool::create_sets(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
@@ -148,11 +149,11 @@ Void DescriptorPool::create_sets(const LogicalDevice& logicalDevice, const VkAll
     DynamicArray<VkDescriptorSet> sets(setData.size(), VK_NULL_HANDLE);
     counts.reserve(setData.size());
     layouts.reserve(setData.size());
-    for (const DescriptorSetData& data : setData)
+    for (const DescriptorSetData& set : setData)
     {
-	    const UInt64 lastWriteIndex = data.writes.size() - 1;
-        counts.push_back(data.writes[lastWriteIndex].descriptorCount);
-        layouts.push_back(get_layout_data_by_handle(data.layoutHandle).layout);
+	    const UInt64 lastWriteIndex = set.writes.size() - 1;
+        counts.push_back(set.writes[lastWriteIndex].descriptorCount);
+        layouts.push_back(get_layout_data_by_handle(set.layoutHandle).layout);
     }
 
 
@@ -176,20 +177,46 @@ Void DescriptorPool::create_sets(const LogicalDevice& logicalDevice, const VkAll
 
     for (UInt64 i = 0; i < sets.size(); ++i)
     {
-        DescriptorSetData& data = setData[i];
-        data.set = sets[i];
+        DescriptorSetData& set = setData[i];
+        set.set = sets[i];
 
-        for (VkWriteDescriptorSet& write : data.writes)
+        for (VkWriteDescriptorSet& write : set.writes)
         {
-            write.dstSet = data.set;
+            write.dstSet = set.set;
         }
 
         vkUpdateDescriptorSets(logicalDevice.get_device(),
-                               UInt32(data.writes.size()),
-                               data.writes.data(),
+                               UInt32(set.writes.size()),
+                               set.writes.data(),
                                0,
                                nullptr);
     }
+}
+
+Void DescriptorPool::update_set(const LogicalDevice& logicalDevice, const DescriptorResourceInfo& data, Handle<DescriptorSetData> handle, UInt32 arrayElement, UInt64 binding)
+{
+	DescriptorSetData& set             = get_set_data_by_handle(handle);
+    VkWriteDescriptorSet& write        = set.writes[binding];
+	const DescriptorLayoutData& layout = get_layout_data_by_handle(set.layoutHandle);
+
+    write.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.pNext            = nullptr;
+    write.dstArrayElement  = arrayElement;
+    write.dstBinding       = layout.bindings[binding].binding;
+    write.descriptorType   = layout.bindings[binding].descriptorType;
+    write.descriptorCount  = UInt32(data.bufferInfos.size()
+                           + data.imageInfos.size()
+                           + data.texelBufferViews.size());
+    write.pBufferInfo      = data.bufferInfos.data();
+    write.pImageInfo       = data.imageInfos.data();
+    write.pTexelBufferView = data.texelBufferViews.data();
+    write.dstSet           = set.set;
+
+    vkUpdateDescriptorSets(logicalDevice.get_device(),
+                           1,
+                           &write,
+                           0,
+                           nullptr);
 }
 
 Void DescriptorPool::set_push_constants(const DynamicArray<VkPushConstantRange>& pushConstants)
@@ -231,7 +258,7 @@ DescriptorLayoutData& DescriptorPool::get_layout_data_by_handle(const Handle<Des
     return layoutData[handle.id];
 }
 
-const Handle<DescriptorSetData>& DescriptorPool::get_set_data_handle_by_name(const String& name) const
+Handle<DescriptorSetData> DescriptorPool::get_set_data_handle_by_name(const String& name) const
 {
     const auto& iterator = nameToIdSetData.find(name);
     if (iterator == nameToIdSetData.end() || iterator->second.id < 0)

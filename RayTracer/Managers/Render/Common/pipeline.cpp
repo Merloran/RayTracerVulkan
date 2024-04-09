@@ -80,8 +80,8 @@ Void Pipeline::create_graphics_pipeline(const DescriptorPool& descriptorPool, co
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.rasterizationSamples = logicalDevice.get_samples();
-    if (logicalDevice.is_multi_sampling_enabled())
+    multisampling.rasterizationSamples = renderPass.get_samples();
+    if (renderPass.is_multi_sampling_enabled())
     {
 	    multisampling.sampleShadingEnable   = VK_TRUE; // enable sample shading in the pipeline
 	    multisampling.minSampleShading      = 0.2f; // min fraction for sample shading; closer to one is smooth

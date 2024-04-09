@@ -97,6 +97,7 @@ private:
 	Bool shouldRefresh;
 
 
+	Void resize_images(const UVector2& size);
 	Void ray_trace(Camera& camera);
 	Void generate_rays(Camera& camera);
 	Void create_pipelines();

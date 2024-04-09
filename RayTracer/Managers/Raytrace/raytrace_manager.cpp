@@ -166,12 +166,7 @@ Void SRaytraceManager::update(Camera &camera, Float32 deltaTime)
 	if (hasWindowResized)
 	{
 		shouldRefresh = false;
-		accumulationTexture.size = size;
-		directionTexture.size = size;
-		renderManager.resize_image(size, accumulationTexture.image);
-		renderManager.resize_image(size, directionTexture.image);
-		// glBindImageTexture(0, directionTexture.gpuId, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
-		// glBindImageTexture(1, screenTexture.gpuId, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
+		resize_images(size);
 	}
 
 	if (hasWindowResized || hasCameraChanged)
@@ -193,6 +188,37 @@ Void SRaytraceManager::update(Camera &camera, Float32 deltaTime)
 	// glActiveTexture(GL_TEXTURE0);
 	// glBindTexture(GL_TEXTURE_2D, screenTexture.gpuId);
 	// renderManager.draw_quad();
+}
+
+Void SRaytraceManager::resize_images(const UVector2& size)
+{
+	SRenderManager& renderManager = SRenderManager::get();
+	accumulationTexture.size = size;
+	directionTexture.size    = size;
+	renderManager.resize_image(size, accumulationTexture.image);
+	renderManager.resize_image(size, directionTexture.image);
+	
+
+	DescriptorResourceInfo accumulationResource;
+	VkDescriptorImageInfo& accumulationInfo = accumulationResource.imageInfos.emplace_back();
+	const Image& accumulationImage = renderManager.get_image_by_handle(accumulationTexture.image);
+	accumulationInfo.imageLayout  = accumulationImage.get_current_layout();
+	accumulationInfo.imageView	  = accumulationImage.get_view();
+	accumulationInfo.sampler      = accumulationImage.get_sampler();
+
+	const Handle<DescriptorSetData> accumulationHandle = descriptorPool.get_set_data_handle_by_name("AccumulationTexture");
+	descriptorPool.update_set(renderManager.get_logical_device(), accumulationResource, accumulationHandle, 0, 0);
+
+
+	DescriptorResourceInfo directionResource;
+	VkDescriptorImageInfo& directionInfo = directionResource.imageInfos.emplace_back();
+	const Image& directionImage = renderManager.get_image_by_handle(directionTexture.image);
+	directionInfo.imageLayout = directionImage.get_current_layout();
+	directionInfo.imageView	  = directionImage.get_view();
+	directionInfo.sampler     = directionImage.get_sampler();
+
+	const Handle<DescriptorSetData> directionHandle = descriptorPool.get_set_data_handle_by_name("DirectionTexture");
+	descriptorPool.update_set(renderManager.get_logical_device(), directionResource, directionHandle, 0, 0);
 }
 
 Void SRaytraceManager::ray_trace(Camera& camera)
@@ -269,7 +295,8 @@ Void SRaytraceManager::create_pipelines()
 	postprocessPass.create(renderManager.get_physical_device(), 
 						   renderManager.get_logical_device(), 
 						   postprocessSwapchain, 
-						   nullptr, 
+						   nullptr,
+						   VK_SAMPLE_COUNT_1_BIT,
 						   false);
 
 	postprocessSwapchain.create_framebuffers(renderManager.get_logical_device(), postprocessPass, nullptr);
@@ -296,7 +323,7 @@ Void SRaytraceManager::create_descriptors()
 							   VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
 							   VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
 
-	descriptorPool.add_binding("RayGenerationLayout",
+	descriptorPool.add_binding("DirectionLayout",
 							   2,
 							   0,
 							   VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -416,9 +443,7 @@ Void SRaytraceManager::setup_descriptors()
 	bvhInfo.offset = 0;
 	bvhInfo.range  = sizeof(bvh.hierarchy[0]) * bvh.hierarchy.size();
 
-	descriptorPool.add_set(sceneLayout,
-						   sceneResources,
-						   "SceneData");
+	descriptorPool.add_set(sceneLayout, sceneResources, "SceneData");
 
 
 	DynamicArray<DescriptorResourceInfo> textureResources;
@@ -434,9 +459,29 @@ Void SRaytraceManager::setup_descriptors()
 		imageInfo.sampler	  = image.get_sampler();
 	}
 
-	descriptorPool.add_set(descriptorPool.get_layout_data_handle_by_name("TexturesDataLayout"),
-						   textureResources,
-						   "Textures");
+	descriptorPool.add_set(descriptorPool.get_layout_data_handle_by_name("TexturesDataLayout"), textureResources, "Textures");
+
+
+	const Handle<DescriptorLayoutData> accumulationLayout = descriptorPool.get_layout_data_handle_by_name("AccumulationLayout");
+	DynamicArray<DescriptorResourceInfo> accumulationResources;
+	VkDescriptorImageInfo& accumulationInfo = accumulationResources.emplace_back().imageInfos.emplace_back();
+	const Image& accumulationImage = renderManager.get_image_by_handle(accumulationTexture.image);
+	accumulationInfo.imageLayout = accumulationImage.get_current_layout();
+	accumulationInfo.imageView	 = accumulationImage.get_view();
+	accumulationInfo.sampler	 = accumulationImage.get_sampler();
+
+	descriptorPool.add_set(accumulationLayout, accumulationResources, "AccumulationTexture");
+
+
+	const Handle<DescriptorLayoutData> directionLayout = descriptorPool.get_layout_data_handle_by_name("DirectionLayout");
+	DynamicArray<DescriptorResourceInfo> directionResources;
+	VkDescriptorImageInfo& directionInfo = directionResources.emplace_back().imageInfos.emplace_back();
+	const Image& directionImage = renderManager.get_image_by_handle(directionTexture.image);
+	directionInfo.imageLayout = directionImage.get_current_layout();
+	directionInfo.imageView	  = directionImage.get_view();
+	directionInfo.sampler	  = directionImage.get_sampler();
+
+	descriptorPool.add_set(directionLayout, directionResources, "DirectionTexture");
 
 
 	descriptorPool.create_sets(renderManager.get_logical_device(), nullptr);
@@ -464,7 +509,11 @@ Void SRaytraceManager::refresh()
 
 Void SRaytraceManager::shutdown()
 {
-	SRenderManager& renderManager = SRenderManager::get();
+	SPDLOG_INFO("Raytrace Manager shutdown.");
+	const SRenderManager& renderManager = SRenderManager::get();
+	vkDeviceWaitIdle(renderManager.get_logical_device().get_device());
+	SPDLOG_INFO("Wait until frame end...");
+
 	descriptorPool.clear(renderManager.get_logical_device(), nullptr);
 	postprocessSwapchain.clear(renderManager.get_logical_device(), nullptr);
 	postprocessPass.clear(renderManager.get_logical_device(), nullptr);

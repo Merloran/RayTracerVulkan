@@ -71,8 +71,7 @@ Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMess
     {
         throw std::runtime_error("failed to create logical device!");
     }
-
-    samples = physicalDevice.get_max_samples();
+    
     vkGetDeviceQueue(device, physicalDevice.get_present_family_index(), 0, &presentQueue);
     vkGetDeviceQueue(device, physicalDevice.get_graphics_family_index(), 0, &graphicsQueue);
     vkGetDeviceQueue(device, physicalDevice.get_compute_family_index(), 0, &computeQueue);
@@ -81,30 +80,6 @@ Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMess
 VkDevice LogicalDevice::get_device() const
 {
     return device;
-}
-
-VkSampleCountFlagBits LogicalDevice::get_samples() const
-{
-    return samples;
-}
-
-Bool LogicalDevice::is_multi_sampling_enabled() const
-{
-    if (samples & VK_SAMPLE_COUNT_1_BIT)
-    {
-        return false;
-    }
-    return true;
-}
-
-Void LogicalDevice::set_samples(VkSampleCountFlagBits samples)
-{
-    this->samples = samples;
-}
-
-Void LogicalDevice::disable_multi_sampling()
-{
-    samples = VK_SAMPLE_COUNT_1_BIT;
 }
 
 VkQueue LogicalDevice::get_graphics_queue() const
