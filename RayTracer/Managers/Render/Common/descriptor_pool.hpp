@@ -58,6 +58,8 @@ public:
 					UInt64 binding);
 
 	// Remember to make proper offsets in shaders code
+	// Offsets are automatically calculated based on previous constants
+	// It is ignoring set offset but ranges must been in proper order
 	Void set_push_constants(const DynamicArray<VkPushConstantRange> &pushConstants);
 
 	[[nodiscard]]

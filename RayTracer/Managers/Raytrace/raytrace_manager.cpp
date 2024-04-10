@@ -399,12 +399,10 @@ Void SRaytraceManager::create_descriptors()
 	DynamicArray<VkPushConstantRange> pushConstants;
 	VkPushConstantRange& rayGeneration = pushConstants.emplace_back();
 	rayGeneration.size		 = sizeof(RayGenerationConstants);
-	rayGeneration.offset	 = 0;
 	rayGeneration.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
 	VkPushConstantRange& raytrace = pushConstants.emplace_back();
 	raytrace.size		= sizeof(RaytraceConstants);
-	raytrace.offset		= sizeof(RayGenerationConstants);
 	raytrace.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
 	descriptorPool.set_push_constants(pushConstants);

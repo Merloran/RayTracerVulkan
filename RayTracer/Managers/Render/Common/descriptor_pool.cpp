@@ -221,7 +221,17 @@ Void DescriptorPool::update_set(const LogicalDevice& logicalDevice, const Descri
 
 Void DescriptorPool::set_push_constants(const DynamicArray<VkPushConstantRange>& pushConstants)
 {
-    this->pushConstants = pushConstants;
+    this->pushConstants.reserve(pushConstants.size());
+
+    UInt32 offset = 0;
+    for (const VkPushConstantRange& constant : pushConstants)
+    {
+        VkPushConstantRange& range = this->pushConstants.emplace_back();
+        range.size       = constant.size;
+        range.offset     = offset;
+        range.stageFlags = constant.stageFlags;
+        offset += constant.size;
+    }
 }
 
 Handle<DescriptorLayoutData> DescriptorPool::get_layout_data_handle_by_name(const String& name) const
