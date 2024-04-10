@@ -52,8 +52,10 @@ Void SRenderManager::startup()
     }
     create_graphics_descriptors();
 
-    create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-    create_command_buffers(VK_COMMAND_BUFFER_LEVEL_PRIMARY, { "Graphics1", "Graphics2" });
+    graphicsPool = create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    create_command_buffers(get_command_pool_by_handle(graphicsPool), 
+                           VK_COMMAND_BUFFER_LEVEL_PRIMARY, 
+                           { "Graphics1", "Graphics2" });
 
     renderPass.create(physicalDevice, logicalDevice, swapchain, nullptr, physicalDevice.get_max_samples());
     swapchain.create_framebuffers(logicalDevice, renderPass, nullptr);
@@ -195,6 +197,16 @@ Buffer& SRenderManager::get_buffer_by_handle(const Handle<Buffer> handle)
         return buffers[0];
     }
     return buffers[handle.id];
+}
+
+VkCommandPool SRenderManager::get_command_pool_by_handle(const Handle<VkCommandPool> handle)
+{
+    if (handle.id < 0 || handle.id >= Int32(commandPools.size()))
+    {
+        SPDLOG_ERROR("Command pool {} not found, returned default.", handle.id);
+        return commandPools[0];
+    }
+    return commandPools[handle.id];
 }
 
 Handle<Shader> SRenderManager::load_shader(const String& filePath, const EShaderType shaderType, const String& functionName)
@@ -571,27 +583,35 @@ Void SRenderManager::create_surface()
     }
 }
 
-Void SRenderManager::create_command_pool(VkCommandPoolCreateFlagBits flags)
+Handle<VkCommandPool> SRenderManager::create_command_pool(VkCommandPoolCreateFlagBits flags)
 {
+    Handle<VkCommandPool> handle = { Int32(commandPools.size()) };
+    VkCommandPool pool;
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.flags            = flags;
     poolInfo.queueFamilyIndex = physicalDevice.get_graphics_family_index();
 
-    if (vkCreateCommandPool(logicalDevice.get_device(), &poolInfo, nullptr, &commandPool) != VK_SUCCESS)
+    const VkResult result = vkCreateCommandPool(logicalDevice.get_device(), &poolInfo, nullptr, &pool);
+    if (result != VK_SUCCESS)
     {
-        throw std::runtime_error("failed to create command pool!");
+        SPDLOG_ERROR("Creating command pool failed with: {}", magic_enum::enum_name(result));
+        return Handle<VkCommandPool>::sNone;
     }
+
+    commandPools.push_back(pool);
+    return handle;
 }
 
-Void SRenderManager::create_command_buffers(VkCommandBufferLevel level, const DynamicArray<String>& names)
+Void SRenderManager::create_command_buffers(VkCommandPool pool, VkCommandBufferLevel level, const DynamicArray<String>& names)
 {
     for (const String& name : names)
     {
         const auto& iterator = nameToIdCommandBuffers.find(name);
         if (iterator != nameToIdCommandBuffers.end())
         {
-            SPDLOG_ERROR("Failed to create command buffers name: {} already exist.", name);
+            SPDLOG_ERROR("Failed to create command buffers, name: {} already exist.", name);
+            return;
         }
     }
     commandBuffers.reserve(names.size());
@@ -599,13 +619,15 @@ Void SRenderManager::create_command_buffers(VkCommandBufferLevel level, const Dy
     buffers.resize(names.size());
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool        = commandPool;
+    allocInfo.commandPool        = pool;
     allocInfo.level              = level;
     allocInfo.commandBufferCount = UInt32(buffers.size());
-
-    if (vkAllocateCommandBuffers(logicalDevice.get_device(), &allocInfo, buffers.data()) != VK_SUCCESS)
+    
+    const VkResult result = vkAllocateCommandBuffers(logicalDevice.get_device(), &allocInfo, buffers.data());
+    if (result != VK_SUCCESS)
     {
-        throw std::runtime_error("failed to allocate command buffers!");
+        SPDLOG_ERROR("Creating command buffers failed with: {}", magic_enum::enum_name(result));
+        return;
     }
 
     for (UInt64 i = 0; i < names.size(); ++i)
@@ -648,12 +670,10 @@ Void SRenderManager::create_graphics_descriptors()
     DynamicArray<VkPushConstantRange> pushConstants;
     VkPushConstantRange& vertexConstant = pushConstants.emplace_back();
     vertexConstant.size       = sizeof(VertexConstants);
-    vertexConstant.offset     = 0;
     vertexConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
     VkPushConstantRange& fragmentConstant = pushConstants.emplace_back();
     fragmentConstant.size       = sizeof(FragmentConstants);
-    fragmentConstant.offset     = sizeof(VertexConstants);
     fragmentConstant.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     descriptorPool.set_push_constants(pushConstants);
@@ -1070,29 +1090,19 @@ Void SRenderManager::copy_buffer(const Buffer& source, Buffer& destination)
 
 Void SRenderManager::create_quick_commands()
 {
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    poolInfo.queueFamilyIndex = physicalDevice.get_graphics_family_index();
-
-	VkResult result = vkCreateCommandPool(logicalDevice.get_device(), &poolInfo, nullptr, &quickCommandPool);
-    if (result != VK_SUCCESS)
-    {
-        SPDLOG_ERROR("Create command pool failed with: {}", magic_enum::enum_name(result));
-        return;
-    }
+    quickPool = create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool        = quickCommandPool;
+    allocInfo.commandPool        = get_command_pool_by_handle(quickPool);
     allocInfo.commandBufferCount = 1;
 
     quickCommandBuffer = { Int32(commandBuffers.size()) };
     CommandBuffer &quickBuffer = commandBuffers.emplace_back();
     VkCommandBuffer buffer = quickBuffer.get_buffer();
 
-    result = vkAllocateCommandBuffers(logicalDevice.get_device(), &allocInfo, &buffer);
+    const VkResult result = vkAllocateCommandBuffers(logicalDevice.get_device(), &allocInfo, &buffer);
     if (result != VK_SUCCESS)
     {
         SPDLOG_ERROR("Create command buffer failed with: {}", magic_enum::enum_name(result));
@@ -1106,7 +1116,7 @@ Void SRenderManager::begin_quick_commands(VkCommandBuffer& commandBuffer)
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool        = commandPool;
+    allocInfo.commandPool        = get_command_pool_by_handle(graphicsPool);
     allocInfo.commandBufferCount = 1;
     
     vkAllocateCommandBuffers(logicalDevice.get_device(), &allocInfo, &commandBuffer);
@@ -1130,7 +1140,9 @@ Void SRenderManager::end_quick_commands(VkCommandBuffer commandBuffer)
     vkQueueSubmit(logicalDevice.get_graphics_queue(), 1, &submitInfo, VK_NULL_HANDLE);
     vkQueueWaitIdle(logicalDevice.get_graphics_queue());
 
-    vkFreeCommandBuffers(logicalDevice.get_device(), commandPool, 1, &commandBuffer);
+    vkFreeCommandBuffers(logicalDevice.get_device(), 
+                         get_command_pool_by_handle(graphicsPool), 
+                         1, &commandBuffer);
 }
 
 Bool SRenderManager::has_stencil_component(VkFormat format)
@@ -1177,13 +1189,16 @@ Void SRenderManager::shutdown()
         buffer.clear(logicalDevice, nullptr);
     }
 
-    vkDestroyCommandPool(logicalDevice.get_device(), commandPool, nullptr);
+    for (VkCommandPool pool : commandPools)
+    {
+        vkDestroyCommandPool(logicalDevice.get_device(), pool, nullptr);
+    }
+
     descriptorPool.clear(logicalDevice, nullptr);
     computePipeline.clear(logicalDevice, nullptr);
     graphicsPipeline.clear(logicalDevice, nullptr);
     renderPass.clear(logicalDevice, nullptr);
     swapchain.clear(logicalDevice, nullptr);
-
 
     for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {

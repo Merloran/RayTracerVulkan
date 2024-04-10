@@ -96,6 +96,7 @@ public:
 
 	Image& get_image_by_handle(const Handle<Image> handle);
 	Buffer& get_buffer_by_handle(const Handle<Buffer> handle);
+	VkCommandPool get_command_pool_by_handle(const Handle<VkCommandPool> handle);
 
 	template <typename Type>
 	Handle<Buffer> create_dynamic_buffer(VkBufferUsageFlagBits usage, 
@@ -159,6 +160,9 @@ public:
 		return handle;
 	}
 
+	Handle<VkCommandPool> create_command_pool(VkCommandPoolCreateFlagBits flags);
+	Void create_command_buffers(VkCommandPool pool, VkCommandBufferLevel level, const DynamicArray<String>& names);
+
 	Void shutdown_imgui();
 	Void shutdown();
 
@@ -177,14 +181,17 @@ private:
 	DescriptorPool descriptorPool;
 	Pipeline graphicsPipeline;
 	Pipeline computePipeline;
-	VkCommandPool commandPool;
-	VkCommandPool quickCommandPool;
 	DynamicArray<Shader> shaders;
 	HashMap<String, Handle<Shader>> nameToIdShaders;
+	
+	Handle<VkCommandPool> graphicsPool;
+	Handle<VkCommandPool> quickPool;
+	DynamicArray<VkCommandPool> commandPools;
 
 	Handle<CommandBuffer> quickCommandBuffer;
 	DynamicArray<CommandBuffer> commandBuffers;
 	HashMap<String, Handle<CommandBuffer>> nameToIdCommandBuffers;
+
 	DynamicArray<Buffer> buffers; // Contains index and vertex data buffers for meshes
 	DynamicArray<Buffer> uniformBuffers;
 	DynamicArray<Image> images;
@@ -200,8 +207,6 @@ private:
 	Void create_vulkan_instance();
 	DynamicArray<const Char*> get_required_extensions();
 	Void create_surface();
-	Void create_command_pool(VkCommandPoolCreateFlagBits flags);
-	Void create_command_buffers(VkCommandBufferLevel level, const DynamicArray<String>& names);
 	Void create_graphics_descriptors();
 	Void create_synchronization_objects();
 	

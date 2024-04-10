@@ -9,6 +9,8 @@
 #include "Common/bvh_builder.hpp"
 
 
+class CommandBuffer;
+
 struct GPUMaterial
 {
 	Int32 albedo;
@@ -80,6 +82,7 @@ private:
 	RenderPass postprocessPass;
 	Swapchain postprocessSwapchain;
 
+	Handle<CommandBuffer> raytraceBuffer;
 	Handle<Shader> rayGeneration, raytrace, screenV, screenF;
 	Handle<Buffer> vertexesHandle, indexesHandle, materialsHandle, bvhHandle, emissionTrianglesHandle;
 	BVHBuilder bvh;
