@@ -57,6 +57,7 @@ public:
 					UInt32 arrayElement, 
 					UInt64 binding);
 
+	// Remember to make proper offsets in shaders code
 	Void set_push_constants(const DynamicArray<VkPushConstantRange> &pushConstants);
 
 	[[nodiscard]]
@@ -73,7 +74,7 @@ public:
 	const DynamicArray<VkPushConstantRange>& get_push_constants() const;
 	DynamicArray<VkDescriptorSetLayout> get_layouts() const;
 
-	Bool are_resources_compatible(const DescriptorLayoutData& layout, const DynamicArray<DescriptorResourceInfo>& resources);
+	Bool are_resources_compatible(const DescriptorLayoutData& layout, const DynamicArray<DescriptorResourceInfo>& resources) const;
 
 	Void clear(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 

@@ -17,7 +17,7 @@ struct Model;
 struct Mesh;
 struct Texture;
 class Image;
-struct CommandBuffer;
+class CommandBuffer;
 template<typename Type>
 struct Handle;
 class Shader;
@@ -30,11 +30,15 @@ struct UniformBufferObject
 	Float32 time;
 };
 
-struct MeshPushConstant
+struct VertexConstants
 {
 	FMatrix4 model;
+};
+
+struct FragmentConstants
+{
 	UInt32 albedoId;
-	UInt32 metallnessId;
+	UInt32 metalnessId;
 	UInt32 roughnessId;
 	UInt32 emissionId;
 };
@@ -174,9 +178,11 @@ private:
 	Pipeline graphicsPipeline;
 	Pipeline computePipeline;
 	VkCommandPool commandPool;
-
+	VkCommandPool quickCommandPool;
 	DynamicArray<Shader> shaders;
 	HashMap<String, Handle<Shader>> nameToIdShaders;
+
+	Handle<CommandBuffer> quickCommandBuffer;
 	DynamicArray<CommandBuffer> commandBuffers;
 	HashMap<String, Handle<CommandBuffer>> nameToIdCommandBuffers;
 	DynamicArray<Buffer> buffers; // Contains index and vertex data buffers for meshes
@@ -199,12 +205,13 @@ private:
 	Void create_graphics_descriptors();
 	Void create_synchronization_objects();
 	
-	Void record_command_buffer(VkCommandBuffer commandBuffer, UInt32 imageIndex, const DynamicArray<Model>& models);
+	Void record_commands(const CommandBuffer &commandBuffer, UInt32 imageIndex, const DynamicArray<Model>& models);
 	Void recreate_swapchain();
 
 	Void generate_mipmaps(Image& image);
 	Void copy_buffer_to_image(const Buffer& buffer, Image& image);
 	Void copy_buffer(const Buffer& source, Buffer& destination);
+	Void create_quick_commands();
 	Void begin_quick_commands(VkCommandBuffer &commandBuffer);
 	Void end_quick_commands(VkCommandBuffer commandBuffer);
 	Bool has_stencil_component(VkFormat format);

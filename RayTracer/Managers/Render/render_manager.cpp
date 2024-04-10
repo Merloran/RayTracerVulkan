@@ -55,7 +55,7 @@ Void SRenderManager::startup()
     create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     create_command_buffers(VK_COMMAND_BUFFER_LEVEL_PRIMARY, { "Graphics1", "Graphics2" });
 
-    renderPass.create(physicalDevice, logicalDevice, swapchain, nullptr, VK_SAMPLE_COUNT_16_BIT);
+    renderPass.create(physicalDevice, logicalDevice, swapchain, nullptr, physicalDevice.get_max_samples());
     swapchain.create_framebuffers(logicalDevice, renderPass, nullptr);
 
     graphicsPipeline.create_graphics_pipeline(descriptorPool, renderPass, shaders, logicalDevice, nullptr);
@@ -438,9 +438,9 @@ Void SRenderManager::render(Camera& camera, const DynamicArray<Model>& models, F
 
     vkResetFences(logicalDevice.get_device(), 1, &inFlightFences[currentFrame]);
 
-    VkCommandBuffer currentBuffer = get_command_buffer_by_name("Graphics" + std::to_string(currentFrame + 1)).buffer;
-    vkResetCommandBuffer(currentBuffer, 0);
-    record_command_buffer(currentBuffer, imageIndex, models);
+    CommandBuffer currentBuffer = get_command_buffer_by_name("Graphics" + std::to_string(currentFrame + 1));
+    currentBuffer.reset(0);
+    record_commands(currentBuffer, imageIndex, models);
 
     VkSubmitInfo submitInfo{};
     Array<VkSemaphore, 1> waitSemaphores = { imageAvailableSemaphores[currentFrame] };
@@ -451,7 +451,7 @@ Void SRenderManager::render(Camera& camera, const DynamicArray<Model>& models, F
     submitInfo.pWaitSemaphores      = waitSemaphores.data();
     submitInfo.pWaitDstStageMask    = waitStages.data();
     submitInfo.commandBufferCount   = 1;
-    submitInfo.pCommandBuffers      = &currentBuffer;
+    submitInfo.pCommandBuffers      = &currentBuffer.get_buffer();
     submitInfo.signalSemaphoreCount = UInt32(signalSemaphores.size());
     submitInfo.pSignalSemaphores    = signalSemaphores.data();
 
@@ -613,8 +613,8 @@ Void SRenderManager::create_command_buffers(VkCommandBufferLevel level, const Dy
 	    const Handle<CommandBuffer> handle = { Int32(commandBuffers.size()) };
         nameToIdCommandBuffers[names[i]] = handle;
         CommandBuffer& buffer = commandBuffers.emplace_back();
-        buffer.buffer = buffers[i];
-        buffer.name = names[i];
+        buffer.set_buffer(buffers[i]);
+        buffer.set_name(names[i]);
     }
 }
 
@@ -646,10 +646,15 @@ Void SRenderManager::create_graphics_descriptors()
     descriptorPool.create_layouts(logicalDevice, nullptr);
 
     DynamicArray<VkPushConstantRange> pushConstants;
-    VkPushConstantRange& pushConstant = pushConstants.emplace_back();
-    pushConstant.size       = sizeof(MeshPushConstant);
-    pushConstant.offset     = 0;
-    pushConstant.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
+    VkPushConstantRange& vertexConstant = pushConstants.emplace_back();
+    vertexConstant.size       = sizeof(VertexConstants);
+    vertexConstant.offset     = 0;
+    vertexConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkPushConstantRange& fragmentConstant = pushConstants.emplace_back();
+    fragmentConstant.size       = sizeof(FragmentConstants);
+    fragmentConstant.offset     = sizeof(VertexConstants);
+    fragmentConstant.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     descriptorPool.set_push_constants(pushConstants);
 }
@@ -679,69 +684,25 @@ Void SRenderManager::create_synchronization_objects()
     }
 }
 
-Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32 imageIndex, const DynamicArray<Model>& models)
+Void SRenderManager::record_commands(const CommandBuffer& commandBuffer, UInt32 imageIndex, const DynamicArray<Model>& models)
 {
-    UInt64 currentFrame = isFrameEven ? 1 : 0;
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags            = 0; // Optional
-    beginInfo.pInheritanceInfo = nullptr; // Optional
-
-    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
-    {
-        throw std::runtime_error("failed to begin recording command buffer!");
-    }
-
-    VkRenderPassBeginInfo renderPassInfo{};
-    const DynamicArray<VkClearValue>& clearValues = renderPass.get_clear_values();
+    SResourceManager& resourceManager = SResourceManager::get();
+    const UInt64 currentFrame = isFrameEven ? 1 : 0;
     const UVector2& extent = swapchain.get_extent();
-    renderPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass        = renderPass.get_render_pass();
-    renderPassInfo.framebuffer       = swapchain.get_framebuffer(imageIndex);
-    renderPassInfo.renderArea.offset = { 0, 0 };
-    renderPassInfo.renderArea.extent = VkExtent2D{ extent.x, extent.y };
-    renderPassInfo.clearValueCount   = UInt32(clearValues.size());
-    renderPassInfo.pClearValues      = clearValues.data();
 
-    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline.get_pipeline());
-
-    VkViewport viewport{};
-    viewport.x        = 0.0f;
-    viewport.y        = 0.0f;
-    viewport.width    = Float32(extent.x);
-    viewport.height   = Float32(extent.y);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.offset = { 0, 0 };
-    scissor.extent = { extent.x, extent.y };
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+    commandBuffer.begin();
+    commandBuffer.begin_render_pass(renderPass, swapchain, imageIndex, VK_SUBPASS_CONTENTS_INLINE);
+    commandBuffer.bind_pipeline(graphicsPipeline);
+    
+    commandBuffer.set_viewport(0, { 0.0f, 0.0f }, extent, { 0.0f, 1.0f });
+    commandBuffer.set_scissor(0, { 0, 0 }, extent);
 
     const VkDescriptorSet uniformSet = descriptorPool.get_set_data_by_name("GraphicsDescriptorSet" + std::to_string(currentFrame)).set;
-    vkCmdBindDescriptorSets(commandBuffer,
-                            VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            graphicsPipeline.get_layout(),
-                            0,
-                            1,
-                            &uniformSet,
-                            0,
-                            nullptr);
+    commandBuffer.bind_descriptor_set(graphicsPipeline, uniformSet, 0);
 
     const VkDescriptorSet textureSet = descriptorPool.get_set_data_by_name("Textures").set;
-    vkCmdBindDescriptorSets(commandBuffer,
-                            VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            graphicsPipeline.get_layout(),
-                            2,
-                            1,
-                            &textureSet,
-                            0,
-                            nullptr);
+    commandBuffer.bind_descriptor_set(graphicsPipeline, textureSet, 2);
 
-    SResourceManager& resourceManager = SResourceManager::get();
     for (const Model& model : models)
     {
         for (UInt64 i = 0; i < model.meshes.size(); ++i)
@@ -756,42 +717,39 @@ Void SRenderManager::record_command_buffer(VkCommandBuffer commandBuffer, UInt32
 
             Array<VkBuffer, 3> vertexBuffers = { positionsBuffer, normalsBuffer, uvsBuffer };
             Array<VkDeviceSize, 3> offsets = { 0, 0, 0 };
-            vkCmdBindVertexBuffers(commandBuffer, 
-                                   0, 
-                                   vertexBuffers.size(), 
-                                   vertexBuffers.data(), 
-                                   offsets.data());
-            vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            commandBuffer.bind_vertex_buffers(0, vertexBuffers, offsets);
+            commandBuffer.bind_index_buffer(indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-            MeshPushConstant pc{};
-            pc.model = FMatrix4(1.0f);
-            pc.albedoId = material.textures[UInt64(ETextureType::Albedo)].id;
+            VertexConstants vertexConstants{};
+            vertexConstants.model = FMatrix4(1.0f);
+            FragmentConstants fragmentConstants{};
+            fragmentConstants.albedoId = material.textures[UInt64(ETextureType::Albedo)].id;
+            
+            commandBuffer.set_constants(graphicsPipeline, 
+                                        VK_SHADER_STAGE_VERTEX_BIT, 
+                                        0, 
+                                        sizeof(vertexConstants),
+                                        &vertexConstants);
 
-            vkCmdPushConstants(commandBuffer,
-                               graphicsPipeline.get_layout(),
-                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0,
-                               sizeof(MeshPushConstant),
-                               &pc);
+            commandBuffer.set_constants(graphicsPipeline, 
+                                        VK_SHADER_STAGE_FRAGMENT_BIT, 
+                                        sizeof(vertexConstants),
+                                        sizeof(fragmentConstants),
+                                        &fragmentConstants);
 
-            vkCmdDrawIndexed(commandBuffer,
-                             UInt32(mesh.indexes.size()),
-                             1,
-                             0,
-                             0,
-                             0);
+            commandBuffer.draw_indexed(UInt32(mesh.indexes.size()),
+                                       1,
+                                       0,
+                                       0,
+                                       0);
         }
     }
 
     //IMGUI
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer.get_buffer());
 
-    vkCmdEndRenderPass(commandBuffer);
-
-    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
-    {
-        throw std::runtime_error("failed to record command buffer!");
-    }
+    commandBuffer.end_render_pass();
+    commandBuffer.end();
 }
 
 Void SRenderManager::recreate_swapchain()
@@ -1108,6 +1066,39 @@ Void SRenderManager::copy_buffer(const Buffer& source, Buffer& destination)
     vkCmdCopyBuffer(commandBuffer, source.get_buffer(), destination.get_buffer(), 1, &copyRegion);
 
     end_quick_commands(commandBuffer);
+}
+
+Void SRenderManager::create_quick_commands()
+{
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.queueFamilyIndex = physicalDevice.get_graphics_family_index();
+
+	VkResult result = vkCreateCommandPool(logicalDevice.get_device(), &poolInfo, nullptr, &quickCommandPool);
+    if (result != VK_SUCCESS)
+    {
+        SPDLOG_ERROR("Create command pool failed with: {}", magic_enum::enum_name(result));
+        return;
+    }
+
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool        = quickCommandPool;
+    allocInfo.commandBufferCount = 1;
+
+    quickCommandBuffer = { Int32(commandBuffers.size()) };
+    CommandBuffer &quickBuffer = commandBuffers.emplace_back();
+    VkCommandBuffer buffer = quickBuffer.get_buffer();
+
+    result = vkAllocateCommandBuffers(logicalDevice.get_device(), &allocInfo, &buffer);
+    if (result != VK_SUCCESS)
+    {
+        SPDLOG_ERROR("Create command buffer failed with: {}", magic_enum::enum_name(result));
+        return;
+    }
+    quickBuffer.set_buffer(buffer);
 }
 
 Void SRenderManager::begin_quick_commands(VkCommandBuffer& commandBuffer)

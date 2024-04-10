@@ -14,10 +14,6 @@ layout(binding = 0) uniform UniformBufferObject
 layout( push_constant ) uniform PushConstants
 {
 	mat4 model;
-	uint albedoId;
-	uint metallnessId;
-	uint roughnessId;
-	uint emissionId;
 } constants;
 
 layout (location = 0) out vec3 worldPosition;

@@ -194,6 +194,7 @@
     <ClCompile Include="Managers\Raytrace\raytrace_manager.cpp" />
     <ClCompile Include="Managers\Render\Camera\camera.cpp" />
     <ClCompile Include="Managers\Render\Common\buffer.cpp" />
+    <ClCompile Include="Managers\Render\Common\command_buffer.cpp" />
     <ClCompile Include="Managers\Render\Common\debug_messenger.cpp" />
     <ClCompile Include="Managers\Render\Common\descriptor_pool.cpp" />
     <ClCompile Include="Managers\Render\Common\image.cpp" />

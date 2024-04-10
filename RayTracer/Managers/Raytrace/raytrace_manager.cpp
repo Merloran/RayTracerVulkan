@@ -404,7 +404,7 @@ Void SRaytraceManager::create_descriptors()
 
 	VkPushConstantRange& raytrace = pushConstants.emplace_back();
 	raytrace.size		= sizeof(RaytraceConstants);
-	raytrace.offset		= 0;
+	raytrace.offset		= sizeof(RayGenerationConstants);
 	raytrace.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
 	descriptorPool.set_push_constants(pushConstants);

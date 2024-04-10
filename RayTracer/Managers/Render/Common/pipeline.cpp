@@ -10,7 +10,7 @@
 
 Void Pipeline::create_graphics_pipeline(const DescriptorPool& descriptorPool, const RenderPass& renderPass, const DynamicArray<Shader>& shaders, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
-    create_descriptor_set_layout_info(descriptorPool.get_layouts(), descriptorPool.get_push_constants(), logicalDevice, allocator);
+    create_layout(descriptorPool.get_layouts(), descriptorPool.get_push_constants(), logicalDevice, allocator);
 
     DynamicArray<VkPipelineShaderStageCreateInfo> shaderStageInfos;
     shaderStageInfos.reserve(shaders.size());
@@ -143,11 +143,12 @@ Void Pipeline::create_graphics_pipeline(const DescriptorPool& descriptorPool, co
         throw std::runtime_error("failed to create graphics pipeline!");
     }
     type = EPipelineType::Graphics;
+    bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 }
 
 Void Pipeline::create_compute_pipeline(const DescriptorPool& descriptorPool, const Shader& shader, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
-    create_descriptor_set_layout_info(descriptorPool.get_layouts(), descriptorPool.get_push_constants(), logicalDevice, allocator);
+    create_layout(descriptorPool.get_layouts(), descriptorPool.get_push_constants(), logicalDevice, allocator);
 
     VkPipelineShaderStageCreateInfo shaderStageInfo;
     const Bool isValid = create_shader_stage_info(shader, shaderStageInfo);
@@ -168,6 +169,7 @@ Void Pipeline::create_compute_pipeline(const DescriptorPool& descriptorPool, con
         throw std::runtime_error("failed to create compute pipeline!");
     }
     type = EPipelineType::Compute;
+    bindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
 }
 
 Void Pipeline::recreate_pipeline(const DescriptorPool& descriptorPool, const RenderPass& renderPass, const DynamicArray<Shader>& shaders, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
@@ -203,7 +205,12 @@ VkPipelineLayout Pipeline::get_layout() const
     return layout;
 }
 
-Void Pipeline::create_descriptor_set_layout_info(const DynamicArray<VkDescriptorSetLayout>& descriptorSetLayout, const DynamicArray<VkPushConstantRange>& pushConstants, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+VkPipelineBindPoint Pipeline::get_bind_point() const
+{
+    return bindPoint;
+}
+
+Void Pipeline::create_layout(const DynamicArray<VkDescriptorSetLayout>& descriptorSetLayout, const DynamicArray<VkPushConstantRange>& pushConstants, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;

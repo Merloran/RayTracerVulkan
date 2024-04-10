@@ -10,9 +10,9 @@ layout(set = 2, binding = 0) uniform sampler2D textures[];
 
 layout( push_constant ) uniform PushConstants
 {
-	mat4 model;
+	layout(offset = 64) // vertex constants
 	uint albedoId;
-	uint metallnessId;
+	uint metalnessId;
 	uint roughnessId;
 	uint emissionId;
 } constants;

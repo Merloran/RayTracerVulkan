@@ -94,6 +94,7 @@ layout (rgba32f, set = 3, binding = 0) uniform image2D accumulated;
 
 layout( push_constant ) uniform PushConstants
 {
+	layout(offset = 56) // RayGenerationConstants
 	vec3  backgroundColor;
 	vec3  cameraPosition;
 	vec3  pixelDeltaU;

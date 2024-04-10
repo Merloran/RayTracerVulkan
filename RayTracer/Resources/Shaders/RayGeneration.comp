@@ -1,14 +1,17 @@
 #version 460 core
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-layout (rgba32f, binding = 0) writeonly uniform image2D rayDirections;
-layout (rgba32f, binding = 1) writeonly uniform image2D accumulated;
+layout (rgba32f, set = 2, binding = 0) writeonly uniform image2D rayDirections;
+layout (rgba32f, set = 3, binding = 0) writeonly uniform image2D accumulated;
 
-uniform vec3 cameraPosition;
-uniform vec3 originPixel;
-uniform vec3 pixelDeltaU;
-uniform vec3 pixelDeltaV;
-uniform ivec2 imageSize;
+layout( push_constant ) uniform PushConstants
+{
+	vec3 cameraPosition;
+	vec3 originPixel;
+	vec3 pixelDeltaU;
+	vec3 pixelDeltaV;
+	ivec2 imageSize;
+} constants;
 
 void main()
 {
@@ -18,8 +21,8 @@ void main()
         return;
     }
 	
-	vec3 pixelPosition = originPixel + float(gid.x) * pixelDeltaU + float(gid.y) * pixelDeltaV;
-	vec3 direction = normalize(pixelPosition - cameraPosition);
+	vec3 pixelPosition = constants.originPixel + float(gid.x) * constants.pixelDeltaU + float(gid.y) * constants.pixelDeltaV;
+	vec3 direction = normalize(pixelPosition - constants.cameraPosition);
 	vec4 pixel = vec4(direction, 1.0f);
 	
     imageStore(rayDirections, gid, pixel);

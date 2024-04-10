@@ -42,6 +42,8 @@ public:
 	VkPipelineCache get_cache() const;
 	[[nodiscard]]
 	VkPipelineLayout get_layout() const;
+	[[nodiscard]]
+	VkPipelineBindPoint get_bind_point() const;
 
 	Void clear(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 
@@ -49,6 +51,7 @@ private:
 	VkPipelineLayout layout;
 	VkPipelineCache cache;
 	VkPipeline pipeline;
+	VkPipelineBindPoint bindPoint;
 	EPipelineType type;
 	Array<VkDynamicState, 2> dynamicStates =
 	{
@@ -59,9 +62,9 @@ private:
 	Void get_mesh_binding_descriptions(DynamicArray<VkVertexInputBindingDescription>& descriptions);
 	Void get_mesh_attribute_descriptions(DynamicArray<VkVertexInputAttributeDescription>& descriptions);
 	
-	Void create_descriptor_set_layout_info(const DynamicArray<VkDescriptorSetLayout>& descriptorSetLayouts,
-										   const DynamicArray<VkPushConstantRange>& pushConstants,
-										   const LogicalDevice& logicalDevice,
-										   const VkAllocationCallbacks* allocator);
+	Void create_layout(const DynamicArray<VkDescriptorSetLayout>& descriptorSetLayouts,
+					   const DynamicArray<VkPushConstantRange>& pushConstants,
+					   const LogicalDevice& logicalDevice,
+					   const VkAllocationCallbacks* allocator);
 	Bool create_shader_stage_info(const Shader& shader, VkPipelineShaderStageCreateInfo& info);
 };

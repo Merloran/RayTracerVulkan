@@ -307,7 +307,7 @@ DynamicArray<VkDescriptorSetLayout> DescriptorPool::get_layouts() const
     return layouts;
 }
 
-Bool DescriptorPool::are_resources_compatible(const DescriptorLayoutData& layout, const DynamicArray<DescriptorResourceInfo>& resources)
+Bool DescriptorPool::are_resources_compatible(const DescriptorLayoutData& layout, const DynamicArray<DescriptorResourceInfo>& resources) const
 {
     if (layout.bindings.size() != resources.size())
     {

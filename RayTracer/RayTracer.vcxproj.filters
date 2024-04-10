@@ -72,6 +72,9 @@
     <ClCompile Include="Managers\Raytrace\Common\bvh_builder.cpp">
       <Filter>Pliki źródłowe</Filter>
     </ClCompile>
+    <ClCompile Include="Managers\Render\Common\command_buffer.cpp">
+      <Filter>Pliki źródłowe</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Core\Utilities\types.hpp">
