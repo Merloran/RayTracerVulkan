@@ -47,6 +47,11 @@ struct RaytraceConstants
 	Int32	 environmentMapId;
 };
 
+struct PostprocessConstants
+{
+	Float32 invFrameCount;
+};
+
 struct Vertex;
 class Buffer;
 class Camera;
@@ -73,20 +78,23 @@ public:
 
 	Int32 maxBouncesCount;
 	Int32 frameLimit;
+
 private:
 	SRaytraceManager() = default;
 	~SRaytraceManager() = default;
 	static constexpr IVector2 WORKGROUP_SIZE{ 16, 16 };
-	DescriptorPool pool;
+	DescriptorPool descriptorPool;
 	Pipeline rayGenerationPipeline, raytracePipeline, postprocessPipeline;
 	RenderPass postprocessPass;
 	Swapchain postprocessSwapchain;
 
+	Handle<Buffer> quadIndexes, quadPositions, quadUvs;
+	Handle<VkCommandPool> raytracePool;
 	Handle<CommandBuffer> raytraceBuffer;
 	Handle<Shader> rayGeneration, raytrace, screenV, screenF;
 	Handle<Buffer> vertexesHandle, indexesHandle, materialsHandle, bvhHandle, emissionTrianglesHandle;
+	Handle<DescriptorSetData> sceneData, accumulationImage, directionImage, bindlessTextures;
 	BVHBuilder bvh;
-	DescriptorPool descriptorPool;
 	Texture accumulationTexture, directionTexture;
 
 	DynamicArray<GPUMaterial> materials;
@@ -100,10 +108,12 @@ private:
 	Bool shouldRefresh;
 
 
+	Void render();
 	Void resize_images(const UVector2& size);
 	Void ray_trace(Camera& camera);
 	Void generate_rays(Camera& camera);
 	Void create_pipelines();
 	Void create_descriptors();
 	Void setup_descriptors();
+	Void create_quad_buffers();
 };

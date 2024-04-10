@@ -44,6 +44,7 @@ public:
 					 VkDescriptorSetLayoutCreateFlags layoutFlags = 0,
 					 VkDescriptorPoolCreateFlags poolFlags = 0);
 
+	// TODO: save set number in memory to get on bind
 	Void create_layouts(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 
 	Handle<DescriptorSetData> add_set(Handle<DescriptorLayoutData> layoutHandle,

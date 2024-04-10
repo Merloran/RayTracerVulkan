@@ -106,7 +106,7 @@ VkFramebuffer Swapchain::get_framebuffer(UInt64 number) const
     return framebuffers[number];
 }
 
-const VkSwapchainKHR& Swapchain::get_swapchain()
+const VkSwapchainKHR& Swapchain::get_swapchain() const
 {
     return swapchain;
 }
@@ -124,6 +124,16 @@ const UVector2& Swapchain::get_extent() const
 const DynamicArray<VkImageView>& Swapchain::get_image_views() const
 {
     return imageViews;
+}
+
+const UInt32 &Swapchain::get_image_index() const
+{
+    return imageIndex;
+}
+
+Void Swapchain::set_image_index(UInt32 imageIndex)
+{
+    this->imageIndex = imageIndex;
 }
 
 Void Swapchain::create_image_views(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)

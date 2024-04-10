@@ -18,10 +18,12 @@ public:
 							 const VkAllocationCallbacks* allocator);
 
     VkFramebuffer get_framebuffer(UInt64 number) const;
-    const VkSwapchainKHR& get_swapchain();
+    const VkSwapchainKHR &get_swapchain() const;
     VkFormat get_image_format() const;
-    const UVector2& get_extent() const;
-    const DynamicArray<VkImageView>& get_image_views() const;
+    const UVector2 &get_extent() const;
+    const DynamicArray<VkImageView> &get_image_views() const;
+    const UInt32 &get_image_index() const;
+    Void set_image_index(UInt32 imageIndex);
 
     Void clear(const LogicalDevice& device, const VkAllocationCallbacks* allocator);
 
@@ -32,6 +34,7 @@ private:
     DynamicArray<VkFramebuffer> framebuffers;
     VkFormat                    imageFormat;
     UVector2                    extent;
+    UInt32                      imageIndex;
 
     Void create_image_views(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 

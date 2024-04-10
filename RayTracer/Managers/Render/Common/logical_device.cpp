@@ -2,6 +2,7 @@
 
 #include "physical_device.hpp"
 #include "debug_messenger.hpp"
+#include "swapchain.hpp"
 
 Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMessenger& debugMessenger, const VkAllocationCallbacks* allocator)
 {
@@ -75,6 +76,192 @@ Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMess
     vkGetDeviceQueue(device, physicalDevice.get_present_family_index(), 0, &presentQueue);
     vkGetDeviceQueue(device, physicalDevice.get_graphics_family_index(), 0, &graphicsQueue);
     vkGetDeviceQueue(device, physicalDevice.get_compute_family_index(), 0, &computeQueue);
+}
+
+VkResult LogicalDevice::acquire_next_image(Swapchain& swapchain, VkSemaphore semaphore, VkFence fence, UInt64 timeout) const
+{
+    UInt32 imageIndex;
+    const VkResult result = vkAcquireNextImageKHR(device,
+                                                  swapchain.get_swapchain(),
+                                                  timeout,
+                                                  semaphore,
+                                                  fence,
+                                                  &imageIndex);
+    swapchain.set_image_index(imageIndex);
+    return result;
+}
+
+VkResult LogicalDevice::wait_for_fences(DynamicArray<VkFence> fences, Bool waitAll, UInt64 timeout) const
+{
+    return vkWaitForFences(device, 
+                           UInt32(fences.size()), 
+                           fences.data(),
+                           waitAll ? VK_TRUE : VK_FALSE,
+                           timeout);
+}
+
+VkResult LogicalDevice::wait_for_fence(VkFence fence, Bool waitAll, UInt64 timeout) const
+{
+    return vkWaitForFences(device, 1, &fence, waitAll ? VK_TRUE : VK_FALSE, timeout);
+}
+
+VkResult LogicalDevice::reset_fences(DynamicArray<VkFence> fences) const
+{
+    return vkResetFences(device, UInt32(fences.size()), fences.data());
+}
+
+VkResult LogicalDevice::reset_fence(VkFence fence) const
+{
+    return vkResetFences(device, 1, &fence);
+}
+
+VkResult LogicalDevice::submit_graphics_queue(const DynamicArray<VkSubmitInfo>& infos, VkFence fence) const
+{
+    return vkQueueSubmit(graphicsQueue, UInt32(infos.size()), infos.data(), fence);
+}
+
+VkResult LogicalDevice::submit_graphics_queue(const DynamicArray<VkSemaphore>& waitSemaphores, const DynamicArray<VkPipelineStageFlags>& waitStages, const DynamicArray<VkCommandBuffer>& commandBuffers, const DynamicArray<VkSemaphore>& signalSemaphores, VkFence fence, Void* next) const
+{
+    VkSubmitInfo info;
+    info.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    info.pNext                = next;
+    info.waitSemaphoreCount   = UInt32(waitSemaphores.size());
+    info.pWaitSemaphores      = waitSemaphores.data();
+    info.pWaitDstStageMask    = waitStages.data();
+    info.commandBufferCount   = UInt32(commandBuffers.size());
+    info.pCommandBuffers      = commandBuffers.data();
+    info.signalSemaphoreCount = UInt32(signalSemaphores.size());
+    info.pSignalSemaphores    = signalSemaphores.data();
+
+    return vkQueueSubmit(graphicsQueue, 1, &info, fence);
+}
+
+VkResult LogicalDevice::submit_graphics_queue(VkSemaphore waitSemaphore, VkPipelineStageFlags waitStage, VkCommandBuffer commandBuffer, VkSemaphore signalSemaphore, VkFence fence, Void* next) const
+{
+    VkSubmitInfo info;
+    info.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    info.pNext                = next;
+    info.waitSemaphoreCount   = 1;
+    info.pWaitSemaphores      = &waitSemaphore;
+    info.pWaitDstStageMask    = &waitStage;
+    info.commandBufferCount   = 1;
+    info.pCommandBuffers      = &commandBuffer;
+    info.signalSemaphoreCount = 1;
+    info.pSignalSemaphores    = &signalSemaphore;
+
+    return vkQueueSubmit(graphicsQueue, 1, &info, fence);
+}
+
+VkResult LogicalDevice::submit_compute_queue(const DynamicArray<VkSubmitInfo>& infos, VkFence fence) const
+{
+    return vkQueueSubmit(computeQueue, UInt32(infos.size()), infos.data(), fence);
+}
+
+VkResult LogicalDevice::submit_compute_queue(const DynamicArray<VkSemaphore>& waitSemaphores, const DynamicArray<VkPipelineStageFlags>& waitStages, const DynamicArray<VkCommandBuffer>& commandBuffers, const DynamicArray<VkSemaphore>& signalSemaphores, VkFence fence, Void* next) const
+{
+    VkSubmitInfo info;
+    info.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    info.pNext                = next;
+    info.waitSemaphoreCount   = UInt32(waitSemaphores.size());
+    info.pWaitSemaphores      = waitSemaphores.data();
+    info.pWaitDstStageMask    = waitStages.data();
+    info.commandBufferCount   = UInt32(commandBuffers.size());
+    info.pCommandBuffers      = commandBuffers.data();
+    info.signalSemaphoreCount = UInt32(signalSemaphores.size());
+    info.pSignalSemaphores    = signalSemaphores.data();
+
+    return vkQueueSubmit(computeQueue, 1, &info, fence);
+}
+
+VkResult LogicalDevice::submit_compute_queue(VkSemaphore waitSemaphore, VkPipelineStageFlags waitStage, VkCommandBuffer commandBuffer, VkSemaphore signalSemaphore, VkFence fence, Void* next) const
+{
+    VkSubmitInfo info;
+    info.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    info.pNext                = next;
+    info.waitSemaphoreCount   = 1;
+    info.pWaitSemaphores      = &waitSemaphore;
+    info.pWaitDstStageMask    = &waitStage;
+    info.commandBufferCount   = 1;
+    info.pCommandBuffers      = &commandBuffer;
+    info.signalSemaphoreCount = 1;
+    info.pSignalSemaphores    = &signalSemaphore;
+
+    return vkQueueSubmit(computeQueue, 1, &info, fence);
+}
+
+VkResult LogicalDevice::submit_present_queue(const DynamicArray<VkSemaphore>& waitSemaphores, const DynamicArray<Swapchain>& swapchains, VkResult* results, Void* next) const
+{
+    DynamicArray<VkSwapchainKHR> vkSwapchains;
+    vkSwapchains.reserve(swapchains.size());
+    DynamicArray<UInt32> imageIndexes;
+    imageIndexes.reserve(swapchains.size());
+    for (const Swapchain& swapchain : swapchains)
+    {
+        vkSwapchains.push_back(swapchain.get_swapchain());
+        imageIndexes.push_back(swapchain.get_image_index());
+    }
+
+    VkPresentInfoKHR presentInfo;
+    presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.pNext              = next;
+    presentInfo.waitSemaphoreCount = UInt32(waitSemaphores.size());
+    presentInfo.pWaitSemaphores    = waitSemaphores.data();
+    presentInfo.swapchainCount     = UInt32(swapchains.size());
+    presentInfo.pSwapchains        = vkSwapchains.data();
+    presentInfo.pImageIndices      = imageIndexes.data();
+    presentInfo.pResults           = results;
+
+    return vkQueuePresentKHR(presentQueue, &presentInfo);
+}
+
+VkResult LogicalDevice::submit_present_queue(const DynamicArray<VkSemaphore>& waitSemaphores, const Swapchain& swapchain, VkResult* result, Void* next) const
+{
+    VkPresentInfoKHR presentInfo;
+    presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.pNext              = next;
+    presentInfo.waitSemaphoreCount = UInt32(waitSemaphores.size());
+    presentInfo.pWaitSemaphores    = waitSemaphores.data();
+    presentInfo.swapchainCount     = 1;
+    presentInfo.pSwapchains        = &swapchain.get_swapchain();
+    presentInfo.pImageIndices      = &swapchain.get_image_index();
+    presentInfo.pResults           = result;
+
+    return vkQueuePresentKHR(presentQueue, &presentInfo);
+}
+
+VkResult LogicalDevice::submit_present_queue(VkSemaphore waitSemaphore, const Swapchain& swapchain, VkResult* result, Void* next) const
+{
+    VkPresentInfoKHR presentInfo;
+    presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.pNext              = next;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores    = &waitSemaphore;
+    presentInfo.swapchainCount     = 1;
+    presentInfo.pSwapchains        = &swapchain.get_swapchain();
+    presentInfo.pImageIndices      = &swapchain.get_image_index();
+    presentInfo.pResults           = result;
+
+    return vkQueuePresentKHR(presentQueue, &presentInfo);
+}
+
+VkResult LogicalDevice::wait_idle() const
+{
+    return vkDeviceWaitIdle(device);
+}
+
+VkResult LogicalDevice::wait_graphics_queue_idle() const
+{
+    return vkQueueWaitIdle(graphicsQueue);
+}
+
+VkResult LogicalDevice::wait_compute_queue_idle() const
+{
+    return vkQueueWaitIdle(computeQueue);
+}
+
+VkResult LogicalDevice::wait_present_queue_idle() const
+{
+    return vkQueueWaitIdle(presentQueue);
 }
 
 VkDevice LogicalDevice::get_device() const

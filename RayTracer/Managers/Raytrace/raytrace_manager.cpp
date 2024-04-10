@@ -1,11 +1,14 @@
 #include "raytrace_manager.hpp"
 
-#include <glad/glad.h>
+#include <imgui.h>
+#include <imgui_impl_vulkan.h>
+#include <magic_enum.hpp>
 
 #include "../Render/Camera/camera.hpp"
 #include "../Render/Common/image.hpp"
 #include "../Render/render_manager.hpp"
 #include "../Display/display_manager.hpp"
+#include "../Render/Common/command_buffer.hpp"
 #include "../Resource/resource_manager.hpp"
 #include "../Resource/Common/model.hpp"
 #include "../Resource/Common/handle.hpp"
@@ -147,16 +150,19 @@ Void SRaytraceManager::startup()
 										  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 										  VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
 
+	create_quad_buffers();
 	create_descriptors();
 	create_pipelines();
 	setup_descriptors();
-
+	raytracePool = renderManager.create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+	renderManager.create_command_buffers(raytracePool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, { "RaytraceBuffer" });
+	raytraceBuffer = renderManager.get_command_buffer_handle_by_name("RaytraceBuffer");
 }
 
 Void SRaytraceManager::update(Camera &camera, Float32 deltaTime)
 {
 	SDisplayManager &displayManager = SDisplayManager::get();
-	SRenderManager &renderManager = SRenderManager::get();
+	const SRenderManager &renderManager = SRenderManager::get();
 
 	const IVector2& size = displayManager.get_window_size();
 
@@ -168,6 +174,7 @@ Void SRaytraceManager::update(Camera &camera, Float32 deltaTime)
 	{
 		shouldRefresh = false;
 		resize_images(size);
+		renderManager.recreate_swapchain(postprocessSwapchain, postprocessPass);
 	}
 
 	if (hasWindowResized || hasCameraChanged)
@@ -182,13 +189,120 @@ Void SRaytraceManager::update(Camera &camera, Float32 deltaTime)
 		ray_trace(camera);
 		frameCount++;
 	}
+
+	render();
+}
+
+Void SRaytraceManager::render()
+{
+	SRenderManager& renderManager = SRenderManager::get();
 	
-	// screen.use();
-	// screen.set_int("accumulated", 0);
-	// screen.set_float("invFrameCount", Float32(1.0f / (frameCount - 1)));
-	// glActiveTexture(GL_TEXTURE0);
-	// glBindTexture(GL_TEXTURE_2D, screenTexture.gpuId);
-	// renderManager.draw_quad();
+    // vkWaitForFences(logicalDevice.get_device(), 1, &inFlightFences[currentFrame], VK_TRUE, Limits<UInt64>::max());
+    //
+    UInt32 imageIndex = 0;
+    // VkResult result = vkAcquireNextImageKHR(logicalDevice.get_device(),
+    //                                         swapchain.get_swapchain(),
+    //                                         Limits<UInt64>::max(),
+    //                                         imageAvailableSemaphores[currentFrame],
+    //                                         VK_NULL_HANDLE,
+    //                                         &imageIndex);
+    //
+    // if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    // {
+    //     return;
+    // }
+    // else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+    // {
+    //     SPDLOG_ERROR("Acquire image failed with: {}", magic_enum::enum_name(result));
+    //     return;
+    // }
+    //
+    // vkResetFences(logicalDevice.get_device(), 1, &inFlightFences[currentFrame]);
+
+	const CommandBuffer& commandBuffer = renderManager.get_command_buffer_by_handle(raytraceBuffer);
+	commandBuffer.reset(0);
+
+	
+	const UVector2& extent = postprocessSwapchain.get_extent();
+
+	commandBuffer.begin();
+	commandBuffer.begin_render_pass(postprocessPass, postprocessSwapchain, imageIndex, VK_SUBPASS_CONTENTS_INLINE);
+	commandBuffer.bind_pipeline(postprocessPipeline);
+
+	commandBuffer.set_viewport(0, { 0.0f, 0.0f }, extent, { 0.0f, 1.0f });
+	commandBuffer.set_scissor(0, { 0, 0 }, extent);
+
+
+	const DescriptorSetData& accumulation = descriptorPool.get_set_data_by_handle(accumulationImage);
+	commandBuffer.bind_descriptor_set(raytracePipeline, accumulation.set, 3);
+	
+	PostprocessConstants constants;
+	constants.invFrameCount = 1.0f / Float32(frameCount - 1);
+
+	commandBuffer.set_constants(postprocessPipeline,
+								VK_SHADER_STAGE_FRAGMENT_BIT,
+								sizeof(RayGenerationConstants) + sizeof(RaytraceConstants),
+								sizeof(constants),
+								&constants);
+
+	const VkBuffer positionsBuffer = renderManager.get_buffer_by_handle(quadPositions).get_buffer();
+	const VkBuffer uvsBuffer	   = renderManager.get_buffer_by_handle(quadUvs).get_buffer();
+	const VkBuffer indexBuffer	   = renderManager.get_buffer_by_handle(quadIndexes).get_buffer();
+
+	const Array<VkBuffer, 2> vertexBuffers = { positionsBuffer, uvsBuffer };
+	const Array<VkDeviceSize, 2> offsets = { 0, 0 };
+	commandBuffer.bind_vertex_buffers(0, vertexBuffers, offsets);
+	commandBuffer.bind_index_buffer(indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+	commandBuffer.draw_indexed(6, 1, 0, 0, 0);
+
+	//IMGUI
+	//ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer.get_buffer());
+
+	commandBuffer.end_render_pass();
+	commandBuffer.end();
+
+
+
+	// VkSubmitInfo submitInfo{};
+	// Array<VkSemaphore, 1> waitSemaphores = { imageAvailableSemaphores[currentFrame] };
+	// Array<VkSemaphore, 1> signalSemaphores = { renderFinishedSemaphores[currentFrame] };
+	// Array<VkPipelineStageFlags, 1> waitStages = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+	// submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	// submitInfo.waitSemaphoreCount = UInt32(waitSemaphores.size());
+	// submitInfo.pWaitSemaphores = waitSemaphores.data();
+	// submitInfo.pWaitDstStageMask = waitStages.data();
+	// submitInfo.commandBufferCount = 1;
+	// submitInfo.pCommandBuffers = &currentBuffer.get_buffer();
+	// submitInfo.signalSemaphoreCount = UInt32(signalSemaphores.size());
+	// submitInfo.pSignalSemaphores = signalSemaphores.data();
+	//
+	// result = vkQueueSubmit(logicalDevice.get_graphics_queue(), 1, &submitInfo, inFlightFences[currentFrame]);
+	// if (result != VK_SUCCESS)
+	// {
+	// 	SPDLOG_ERROR("Submit draw commands failed with: {}", magic_enum::enum_name(result));
+	// 	return;
+	// }
+	//
+	// VkPresentInfoKHR presentInfo{};
+	// presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	// presentInfo.waitSemaphoreCount = UInt32(signalSemaphores.size());
+	// presentInfo.pWaitSemaphores = signalSemaphores.data();
+	// presentInfo.swapchainCount = 1;
+	// presentInfo.pSwapchains = &swapchain.get_swapchain();
+	// presentInfo.pImageIndices = &imageIndex;
+	// presentInfo.pResults = nullptr; // Optional
+	//
+	// result = vkQueuePresentKHR(logicalDevice.get_present_queue(), &presentInfo);
+	//
+	// if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || SDisplayManager::get().was_resize_handled())
+	// {
+	// }
+	// else if (result != VK_SUCCESS)
+	// {
+	// 	SPDLOG_ERROR("Present swapchain image failed with: {}", magic_enum::enum_name(result));
+	// 	return;
+	// }
 }
 
 Void SRaytraceManager::resize_images(const UVector2& size)
@@ -224,58 +338,57 @@ Void SRaytraceManager::resize_images(const UVector2& size)
 
 Void SRaytraceManager::ray_trace(Camera& camera)
 {
-	// rayTrace.use();
-	// rayTrace.set_vec3("backgroundColor", backgroundColor);
-	// rayTrace.set_vec3("cameraPosition", camera.get_position());
-	// rayTrace.set_vec3("pixelDeltaU", pixelDeltaU);
-	// rayTrace.set_vec3("pixelDeltaV", pixelDeltaV);
-	// rayTrace.set_ivec2("imageSize", screenTexture.size);
-	// rayTrace.set_vec2("viewBounds", camera.get_view_bounds());
-	// rayTrace.set_float("time", renderTime);
-	// rayTrace.set_int("frameCount", frameCount);
-	// rayTrace.set_int("trianglesCount", trianglesCount);
-	// rayTrace.set_int("emissionTrianglesCount", emissionTriangles.size());
-	// rayTrace.set_int("maxBouncesCount", maxBouncesCount);
-	// rayTrace.set_int("rootId", bvh.rootId);
-	// rayTrace.set_int("environmentMapId", textures.size() - 1);
+	SResourceManager& resourceManager = SResourceManager::get();
+	SRenderManager& renderManager = SRenderManager::get();
 
-	const IVector2 workGroupsCount = glm::ceil(FVector2(directionTexture.size) / FVector2(WORKGROUP_SIZE));
-	
-	// glDispatchCompute(workGroupsCount.x, workGroupsCount.y, 1);
-	VkCommandBufferBeginInfo beginInfo{};
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.flags = 0; // Optional
-	beginInfo.pInheritanceInfo = nullptr; // Optional
+	const UVector2 workGroupsCount = glm::ceil(FVector2(directionTexture.size) / FVector2(WORKGROUP_SIZE));
+	const CommandBuffer& commandBuffer = renderManager.get_command_buffer_by_handle(raytraceBuffer);
 
-	// if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
-	// {
-	// 	throw std::runtime_error("failed to begin recording command buffer!");
-	// }
-	//
-	// vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
-	//
-	// vkCmdBindDescriptorSets(commandBuffer,
-	// 						VK_PIPELINE_BIND_POINT_COMPUTE,
-	// 						computePipelineLayout,
-	// 						0,
-	// 						1,
-	// 						&descriptorSets[currentFrame],
-	// 						0,
-	// 						nullptr);
-	//
-	// vkCmdDispatch(commandBuffer, PARTICLE_COUNT / 256, 1, 1);
-	//
-	//
-	// if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
-	// {
-	// 	throw std::runtime_error("failed to record command buffer!");
-	// }
+	commandBuffer.begin();
+	commandBuffer.bind_pipeline(raytracePipeline);
+
+	DescriptorSetData& accumulation = descriptorPool.get_set_data_by_handle(accumulationImage);
+	DescriptorSetData& direction	= descriptorPool.get_set_data_by_handle(directionImage);
+	DescriptorSetData& textures		= descriptorPool.get_set_data_by_handle(bindlessTextures);
+	DescriptorSetData& scene		= descriptorPool.get_set_data_by_handle(sceneData);
+
+	commandBuffer.bind_descriptor_set(raytracePipeline, accumulation.set, 3);
+	commandBuffer.bind_descriptor_set(raytracePipeline, direction.set, 2);
+	commandBuffer.bind_descriptor_set(raytracePipeline, textures.set, 1);
+	commandBuffer.bind_descriptor_set(raytracePipeline, scene.set, 0);
+
+	RaytraceConstants constants{};
+	constants.backgroundColor		 = backgroundColor;
+	constants.cameraPosition		 = camera.get_position();
+	constants.pixelDeltaU			 = pixelDeltaU;
+	constants.pixelDeltaV			 = pixelDeltaV;
+	constants.imageSize				 = accumulationTexture.size;
+	constants.viewBounds			 = camera.get_view_bounds();
+	constants.time					 = renderTime;
+	constants.frameCount			 = frameCount;
+	constants.trianglesCount		 = trianglesCount;
+	constants.emissionTrianglesCount = Int32(emissionTriangles.size());
+	constants.maxBouncesCount		 = maxBouncesCount;
+	constants.rootId				 = bvh.rootId;
+	constants.environmentMapId		 = Int32(resourceManager.get_textures().size() - 1ULL);
+
+	commandBuffer.set_constants(raytracePipeline,
+								VK_SHADER_STAGE_COMPUTE_BIT,
+								sizeof(RayGenerationConstants),
+								sizeof(constants),
+								&constants);
+
+	commandBuffer.dispatch({ workGroupsCount, 1 });
+
+	commandBuffer.end();
 }
 
 Void SRaytraceManager::generate_rays(Camera& camera)
 {
 	const SDisplayManager& displayManager = SDisplayManager::get();
-	const IVector2 workGroupsCount = glm::ceil(FVector2(directionTexture.size) / FVector2(WORKGROUP_SIZE));
+	SRenderManager& renderManager = SRenderManager::get();
+	const CommandBuffer& commandBuffer = renderManager.get_command_buffer_by_handle(raytraceBuffer);
+	const UVector2 workGroupsCount = glm::ceil(FVector2(directionTexture.size) / FVector2(WORKGROUP_SIZE));
 
 	frameCount = 1;
 	const Float32 theta = glm::radians(camera.get_fov());
@@ -291,13 +404,33 @@ Void SRaytraceManager::generate_rays(Camera& camera)
 	pixelDeltaV = viewportV / Float32(directionTexture.size.y);
 	originPixel = camera.get_position() + camera.get_forward() + (pixelDeltaU - viewportU + pixelDeltaV - viewportV) * 0.5f;
 	
-	// rayGeneration.set_vec3("cameraPosition", camera.get_position());
-	// rayGeneration.set_vec3("originPixel", originPixel);
-	// rayGeneration.set_vec3("pixelDeltaU", pixelDeltaU);
-	// rayGeneration.set_vec3("pixelDeltaV", pixelDeltaV);
-	// rayGeneration.set_ivec2("imageSize", directionTexture.size);
-	// glDispatchCompute(workGroupsCount.x, workGroupsCount.y, 1);
-	// glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+	commandBuffer.begin();
+	commandBuffer.bind_pipeline(raytracePipeline);
+
+	DescriptorSetData& accumulation = descriptorPool.get_set_data_by_handle(accumulationImage);
+	DescriptorSetData& direction    = descriptorPool.get_set_data_by_handle(directionImage);
+	
+	commandBuffer.bind_descriptor_set(raytracePipeline, accumulation.set, 3);
+	commandBuffer.bind_descriptor_set(raytracePipeline, direction.set, 2);
+
+	RayGenerationConstants constants{};
+	constants.cameraPosition = camera.get_position();
+	constants.originPixel	 = originPixel;
+	constants.pixelDeltaU	 = pixelDeltaU;
+	constants.pixelDeltaV	 = pixelDeltaV;
+	constants.imageSize		 = directionTexture.size;
+
+	commandBuffer.set_constants(raytracePipeline,
+								VK_SHADER_STAGE_COMPUTE_BIT,
+								0,
+								sizeof(constants),
+								&constants);
+
+	commandBuffer.dispatch({ workGroupsCount, 1 });
+
+	commandBuffer.end();
+	// glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); ???
 }
 
 Void SRaytraceManager::create_pipelines()
@@ -449,7 +582,7 @@ Void SRaytraceManager::setup_descriptors()
 	vertexesInfo.buffer = renderManager.get_buffer_by_handle(vertexesHandle).get_buffer();
 	vertexesInfo.offset = 0;
 	vertexesInfo.range  = sizeof(vertexes[0]) * vertexes.size();
-
+	
 	VkDescriptorBufferInfo& indexesInfo = sceneResources.emplace_back().bufferInfos.emplace_back();
 	indexesInfo.buffer = renderManager.get_buffer_by_handle(indexesHandle).get_buffer();
 	indexesInfo.offset = 0;
@@ -486,7 +619,9 @@ Void SRaytraceManager::setup_descriptors()
 		imageInfo.sampler	  = image.get_sampler();
 	}
 
-	descriptorPool.add_set(descriptorPool.get_layout_data_handle_by_name("TexturesDataLayout"), textureResources, "Textures");
+	this->bindlessTextures = descriptorPool.add_set(descriptorPool.get_layout_data_handle_by_name("TexturesDataLayout"), 
+											textureResources, 
+											"Textures");
 
 
 	const Handle<DescriptorLayoutData> accumulationLayout = descriptorPool.get_layout_data_handle_by_name("AccumulationLayout");
@@ -512,6 +647,36 @@ Void SRaytraceManager::setup_descriptors()
 
 
 	descriptorPool.create_sets(renderManager.get_logical_device(), nullptr);
+}
+
+Void SRaytraceManager::create_quad_buffers()
+{
+	SRenderManager& renderManager = SRenderManager::get();
+	const DynamicArray<UVector3> positions =
+	{
+		UVector3( 1.0f, -1.0f, 1.0f),
+		UVector3(-1.0f, -1.0f, 1.0f),
+		UVector3( 1.0f,  1.0f, 1.0f),
+		UVector3(-1.0f,  1.0f, 1.0f),
+	};
+
+	const DynamicArray<UVector2> uvs =
+	{
+		UVector2(1.0f, 0.0f),
+		UVector2(0.0f, 0.0f),
+		UVector2(1.0f, 1.0f),
+		UVector2(0.0f, 1.0f),
+	};
+
+	const DynamicArray<UInt32> indexes =
+	{
+		0, 1, 2, //Top left triangle
+		1, 2, 3, //Bottom right triangle
+	};
+
+    quadIndexes	  = renderManager.create_static_buffer(indexes, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    quadPositions = renderManager.create_static_buffer(positions, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+    quadUvs		  = renderManager.create_static_buffer(uvs, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 }
 
 Int32 SRaytraceManager::get_frame_count() const

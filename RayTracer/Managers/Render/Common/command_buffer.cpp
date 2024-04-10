@@ -64,6 +64,11 @@ Void CommandBuffer::draw_indexed(UInt32 indexCount, UInt32 instanceCount, UInt32
     vkCmdDrawIndexed(buffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
+Void CommandBuffer::dispatch(const UVector3& groupCount) const
+{
+    vkCmdDispatch(buffer, groupCount.x, groupCount.y, groupCount.z);
+}
+
 Void CommandBuffer::set_constants(const Pipeline& pipeline, VkShaderStageFlags stageFlags, UInt32 offset, UInt32 size, Void* data) const
 {
     vkCmdPushConstants(buffer, pipeline.get_layout(), stageFlags, offset, size, data);

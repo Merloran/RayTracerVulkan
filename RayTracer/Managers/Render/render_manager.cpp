@@ -61,7 +61,6 @@ Void SRenderManager::startup()
     swapchain.create_framebuffers(logicalDevice, renderPass, nullptr);
 
     graphicsPipeline.create_graphics_pipeline(descriptorPool, renderPass, shaders, logicalDevice, nullptr);
-    // computePipeline.create_compute_pipeline(, logicalDevice, nullptr);
 
     create_synchronization_objects();
 }
@@ -385,7 +384,7 @@ Void SRenderManager::reload_shaders()
     shaders.emplace_back(get_shader_by_name("VShader"));
     shaders.emplace_back(get_shader_by_name("FShader"));
 
-    vkDeviceWaitIdle(logicalDevice.get_device());
+    logicalDevice.wait_idle();
     graphicsPipeline.recreate_pipeline(descriptorPool, renderPass, shaders, logicalDevice, nullptr);
 }
 
@@ -417,24 +416,19 @@ Void SRenderManager::render_imgui()
 Void SRenderManager::render(Camera& camera, const DynamicArray<Model>& models, Float32 time)
 {
     UInt64 currentFrame = isFrameEven ? 1 : 0;
-    vkWaitForFences(logicalDevice.get_device(), 1, &inFlightFences[currentFrame], VK_TRUE, Limits<UInt64>::max());
 
-    UInt32 imageIndex;
-    VkResult result = vkAcquireNextImageKHR(logicalDevice.get_device(),
-                                            swapchain.get_swapchain(),
-                                            Limits<UInt64>::max(),
-                                            imageAvailableSemaphores[currentFrame],
-                                            VK_NULL_HANDLE,
-                                            &imageIndex);
+    logicalDevice.wait_for_fence(inFlightFences[currentFrame], true);
+    VkResult result = logicalDevice.acquire_next_image(swapchain, imageAvailableSemaphores[currentFrame]);
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
-        recreate_swapchain();
+        recreate_swapchain(swapchain, renderPass);
         return;
     }
     else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
     {
-        throw std::runtime_error("failed to acquire swap chain image!");
+        SPDLOG_ERROR("Acquire image failed with: {}", magic_enum::enum_name(result));
+        return;
     }
 
     {
@@ -447,49 +441,33 @@ Void SRenderManager::render(Camera& camera, const DynamicArray<Model>& models, F
         update_dynamic_buffer(ubo, uniformBuffers[currentFrame]);
     }
 
-
-    vkResetFences(logicalDevice.get_device(), 1, &inFlightFences[currentFrame]);
+    logicalDevice.reset_fence(inFlightFences[currentFrame]);
 
     CommandBuffer currentBuffer = get_command_buffer_by_name("Graphics" + std::to_string(currentFrame + 1));
     currentBuffer.reset(0);
-    record_commands(currentBuffer, imageIndex, models);
-
-    VkSubmitInfo submitInfo{};
-    Array<VkSemaphore, 1> waitSemaphores = { imageAvailableSemaphores[currentFrame] };
-    Array<VkSemaphore, 1> signalSemaphores = { renderFinishedSemaphores[currentFrame] };
-    Array<VkPipelineStageFlags, 1> waitStages = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-    submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount   = UInt32(waitSemaphores.size());
-    submitInfo.pWaitSemaphores      = waitSemaphores.data();
-    submitInfo.pWaitDstStageMask    = waitStages.data();
-    submitInfo.commandBufferCount   = 1;
-    submitInfo.pCommandBuffers      = &currentBuffer.get_buffer();
-    submitInfo.signalSemaphoreCount = UInt32(signalSemaphores.size());
-    submitInfo.pSignalSemaphores    = signalSemaphores.data();
-
-    if (vkQueueSubmit(logicalDevice.get_graphics_queue(), 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS)
+    record_commands(currentBuffer, models);
+    
+    result = logicalDevice.submit_graphics_queue(imageAvailableSemaphores[currentFrame],
+												 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                                 currentBuffer.get_buffer(),
+                                                 renderFinishedSemaphores[currentFrame],
+                                                 inFlightFences[currentFrame]);
+    if (result != VK_SUCCESS)
     {
-        throw std::runtime_error("failed to submit draw command buffer!");
+        SPDLOG_ERROR("Submit graphics queue failed with: {}", magic_enum::enum_name(result));
+        return;
     }
 
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = UInt32(signalSemaphores.size());
-    presentInfo.pWaitSemaphores    = signalSemaphores.data();
-    presentInfo.swapchainCount     = 1;
-    presentInfo.pSwapchains        = &swapchain.get_swapchain();
-    presentInfo.pImageIndices      = &imageIndex;
-    presentInfo.pResults           = nullptr; // Optional
 
-    result = vkQueuePresentKHR(logicalDevice.get_present_queue(), &presentInfo);
-
+    result = logicalDevice.submit_present_queue(renderFinishedSemaphores[currentFrame], swapchain);
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || SDisplayManager::get().was_resize_handled())
     {
-        recreate_swapchain();
+        recreate_swapchain(swapchain, renderPass);
     }
     else if (result != VK_SUCCESS)
     {
-        throw std::runtime_error("failed to present swap chain image!");
+        SPDLOG_ERROR("Present swapchain image failed with: {}", magic_enum::enum_name(result));
+        return;
     }
 
     isFrameEven = !isFrameEven;
@@ -603,6 +581,11 @@ Handle<VkCommandPool> SRenderManager::create_command_pool(VkCommandPoolCreateFla
     return handle;
 }
 
+Void SRenderManager::create_command_buffers(Handle<VkCommandPool> handle, VkCommandBufferLevel level, const DynamicArray<String>& names)
+{
+    create_command_buffers(get_command_pool_by_handle(handle), level, names);
+}
+
 Void SRenderManager::create_command_buffers(VkCommandPool pool, VkCommandBufferLevel level, const DynamicArray<String>& names)
 {
     for (const String& name : names)
@@ -638,6 +621,26 @@ Void SRenderManager::create_command_buffers(VkCommandPool pool, VkCommandBufferL
         buffer.set_buffer(buffers[i]);
         buffer.set_name(names[i]);
     }
+}
+
+Void SRenderManager::recreate_swapchain(Swapchain& swapchain, RenderPass& renderPass) const
+{
+    SDisplayManager& displayManager = SDisplayManager::get();
+    IVector2 windowSize = displayManager.get_framebuffer_size();
+    while (windowSize.x < 1 || windowSize.y < 1)
+    {
+        windowSize = displayManager.get_framebuffer_size();
+        glfwWaitEvents();
+    }
+
+    logicalDevice.wait_idle();
+
+    swapchain.clear(logicalDevice, nullptr);
+    renderPass.clear_images(logicalDevice, nullptr);
+
+    swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
+    renderPass.create_attachments(physicalDevice, logicalDevice, swapchain, nullptr);
+    swapchain.create_framebuffers(logicalDevice, renderPass, nullptr);
 }
 
 Void SRenderManager::create_graphics_descriptors()
@@ -704,14 +707,14 @@ Void SRenderManager::create_synchronization_objects()
     }
 }
 
-Void SRenderManager::record_commands(const CommandBuffer& commandBuffer, UInt32 imageIndex, const DynamicArray<Model>& models)
+Void SRenderManager::record_commands(const CommandBuffer& commandBuffer, const DynamicArray<Model>& models)
 {
     SResourceManager& resourceManager = SResourceManager::get();
     const UInt64 currentFrame = isFrameEven ? 1 : 0;
     const UVector2& extent = swapchain.get_extent();
 
     commandBuffer.begin();
-    commandBuffer.begin_render_pass(renderPass, swapchain, imageIndex, VK_SUBPASS_CONTENTS_INLINE);
+    commandBuffer.begin_render_pass(renderPass, swapchain, swapchain.get_image_index(), VK_SUBPASS_CONTENTS_INLINE);
     commandBuffer.bind_pipeline(graphicsPipeline);
     
     commandBuffer.set_viewport(0, { 0.0f, 0.0f }, extent, { 0.0f, 1.0f });
@@ -770,26 +773,6 @@ Void SRenderManager::record_commands(const CommandBuffer& commandBuffer, UInt32 
 
     commandBuffer.end_render_pass();
     commandBuffer.end();
-}
-
-Void SRenderManager::recreate_swapchain()
-{
-    SDisplayManager& displayManager = SDisplayManager::get();
-    IVector2 windowSize = displayManager.get_framebuffer_size();
-    while (windowSize.x < 1 || windowSize.y < 1)
-    {
-        windowSize = displayManager.get_framebuffer_size();
-        glfwWaitEvents();
-    }
-
-    vkDeviceWaitIdle(logicalDevice.get_device());
-
-    swapchain.clear(logicalDevice, nullptr);
-    renderPass.clear_images(logicalDevice, nullptr);
-
-    swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
-    renderPass.create_attachments(physicalDevice, logicalDevice, swapchain, nullptr);
-    swapchain.create_framebuffers(logicalDevice, renderPass, nullptr);
 }
 
 Void SRenderManager::generate_mipmaps(Image& image)
@@ -1137,8 +1120,8 @@ Void SRenderManager::end_quick_commands(VkCommandBuffer commandBuffer)
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers    = &commandBuffer;
 
-    vkQueueSubmit(logicalDevice.get_graphics_queue(), 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(logicalDevice.get_graphics_queue());
+    logicalDevice.submit_graphics_queue({ submitInfo }, VK_NULL_HANDLE);
+    logicalDevice.wait_graphics_queue_idle();
 
     vkFreeCommandBuffers(logicalDevice.get_device(), 
                          get_command_pool_by_handle(graphicsPool), 
@@ -1169,7 +1152,7 @@ Void SRenderManager::shutdown_imgui()
 Void SRenderManager::shutdown()
 {
     SPDLOG_INFO("Wait until frame end...");
-    vkDeviceWaitIdle(logicalDevice.get_device());
+    logicalDevice.wait_idle();
     SPDLOG_INFO("Render Manager shutdown.");
 
     shutdown_imgui();

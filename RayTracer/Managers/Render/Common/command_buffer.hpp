@@ -38,6 +38,8 @@ public:
 
 	Void draw_indexed(UInt32 indexCount, UInt32 instanceCount, UInt32 firstIndex, Int32 vertexOffset, UInt32 firstInstance) const;
 
+	Void dispatch(const UVector3 &groupCount) const;
+
 	Void set_constants(const Pipeline& pipeline, VkShaderStageFlags stageFlags, UInt32 offset, UInt32 size, Void* data) const;
 
 	Void set_viewports(UInt32 firstViewport, const DynamicArray<VkViewport> &viewports) const;

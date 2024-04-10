@@ -161,7 +161,9 @@ public:
 	}
 
 	Handle<VkCommandPool> create_command_pool(VkCommandPoolCreateFlagBits flags);
+	Void create_command_buffers(Handle<VkCommandPool> handle, VkCommandBufferLevel level, const DynamicArray<String>& names);
 	Void create_command_buffers(VkCommandPool pool, VkCommandBufferLevel level, const DynamicArray<String>& names);
+	Void recreate_swapchain(Swapchain &swapchain, RenderPass &renderPass) const;
 
 	Void shutdown_imgui();
 	Void shutdown();
@@ -210,8 +212,7 @@ private:
 	Void create_graphics_descriptors();
 	Void create_synchronization_objects();
 	
-	Void record_commands(const CommandBuffer &commandBuffer, UInt32 imageIndex, const DynamicArray<Model>& models);
-	Void recreate_swapchain();
+	Void record_commands(const CommandBuffer &commandBuffer, const DynamicArray<Model>& models);
 
 	Void generate_mipmaps(Image& image);
 	Void copy_buffer_to_image(const Buffer& buffer, Image& image);
