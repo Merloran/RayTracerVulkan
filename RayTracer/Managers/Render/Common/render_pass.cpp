@@ -117,10 +117,14 @@ Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevic
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies   = &dependency;
 
-    if (vkCreateRenderPass(logicalDevice.get_device(), &renderPassInfo, allocator, &renderPass) != VK_SUCCESS)
+    const VkResult result = vkCreateRenderPass(logicalDevice.get_device(), &renderPassInfo, allocator, &renderPass);
+    if (result != VK_SUCCESS)
     {
-        throw std::runtime_error("failed to create render pass!");
+        SPDLOG_ERROR("Render pass creation failed with: {}", magic_enum::enum_name(result));
+        return;
     }
+
+    create_framebuffers(logicalDevice, swapchain, allocator);
 }
 
 Void RenderPass::create_attachments(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator)
@@ -132,6 +136,41 @@ Void RenderPass::create_attachments(const PhysicalDevice& physicalDevice, const 
     if (isDepthTest)
     {
         create_depth_attachment(physicalDevice, logicalDevice, swapchain, allocator);
+    }
+}
+
+Void RenderPass::create_framebuffers(const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator)
+{
+    const DynamicArray<VkImageView>& swapchainViews = swapchain.get_image_views();
+    const UVector2& extent = swapchain.get_extent();
+    framebuffers.resize(swapchainViews.size());
+    DynamicArray<VkImageView> views;
+    // 0 index is for swapchain image view
+    views.resize(images.size() + 1);
+
+    for (UInt64 i = 0; i < images.size(); ++i)
+    {
+        views[i + 1] = images[i].get_view();
+    }
+
+    for (UInt64 i = 0; i < swapchainViews.size(); ++i)
+    {
+        views[0] = swapchainViews[i];
+
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = renderPass;
+        framebufferInfo.attachmentCount = UInt32(views.size());
+        framebufferInfo.pAttachments = views.data();
+        framebufferInfo.width = extent.x;
+        framebufferInfo.height = extent.y;
+        framebufferInfo.layers = 1;
+
+        const VkResult result = vkCreateFramebuffer(logicalDevice.get_device(), &framebufferInfo, allocator, &framebuffers[i]);
+        if (result != VK_SUCCESS)
+        {
+            SPDLOG_ERROR("Framebuffer {} creation failed with: {}", i, magic_enum::enum_name(result));
+        }
     }
 }
 
@@ -165,20 +204,22 @@ Bool RenderPass::is_multi_sampling_enabled() const
     return isMultiSampling;
 }
 
-Void RenderPass::clear_images(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+VkFramebuffer RenderPass::get_framebuffer(UInt64 number) const
 {
-    for (Image& image : images)
+    if (number > framebuffers.size())
     {
-        image.clear(logicalDevice, allocator);
+        SPDLOG_ERROR("Failed to get framebuffer {} is out of bounds, returned nullptr", number);
+        return nullptr;
     }
-    images.clear();
+    return framebuffers[number];
 }
 
-Void RenderPass::clear(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+Void RenderPass::clear_framebuffers(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
-    clear_images(logicalDevice, allocator);
-
-    vkDestroyRenderPass(logicalDevice.get_device(), renderPass, allocator);
+    for (VkFramebuffer framebuffer : framebuffers)
+    {
+        vkDestroyFramebuffer(logicalDevice.get_device(), framebuffer, allocator);
+    }
 }
 
 Void RenderPass::create_depth_attachment(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator)
@@ -209,4 +250,21 @@ Void RenderPass::create_color_attachment(const PhysicalDevice& physicalDevice, c
                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                  VK_IMAGE_ASPECT_COLOR_BIT,
                                  allocator);
+}
+
+Void RenderPass::clear_images(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+{
+    for (Image& image : images)
+    {
+        image.clear(logicalDevice, allocator);
+    }
+    images.clear();
+}
+
+Void RenderPass::clear(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+{
+    clear_images(logicalDevice, allocator);
+    clear_framebuffers(logicalDevice, allocator);
+
+    vkDestroyRenderPass(logicalDevice.get_device(), renderPass, allocator);
 }

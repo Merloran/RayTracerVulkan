@@ -13,11 +13,6 @@ public:
                 const VkSurfaceKHR& surface,
                 const VkAllocationCallbacks* allocator);
 
-    Void create_framebuffers(const LogicalDevice& logicalDevice,
-							 const RenderPass& renderPass,
-							 const VkAllocationCallbacks* allocator);
-
-    VkFramebuffer get_framebuffer(UInt64 number) const;
     const VkSwapchainKHR &get_swapchain() const;
     VkFormat get_image_format() const;
     const UVector2 &get_extent() const;
@@ -31,7 +26,6 @@ private:
     VkSwapchainKHR              swapchain;
     DynamicArray<VkImage>       images;
     DynamicArray<VkImageView>   imageViews;
-    DynamicArray<VkFramebuffer> framebuffers;
     VkFormat                    imageFormat;
     UVector2                    extent;
     UInt32                      imageIndex;

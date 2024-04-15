@@ -23,6 +23,10 @@ public:
 							const Swapchain& swapchain,
 							const VkAllocationCallbacks* allocator);
 
+	Void create_framebuffers(const LogicalDevice& logicalDevice,
+							 const Swapchain& swapchain,
+							 const VkAllocationCallbacks* allocator);
+
 	[[nodiscard]]
 	VkSampleCountFlagBits get_samples() const;
 	[[nodiscard]]
@@ -35,7 +39,10 @@ public:
 	Bool is_depth_test_enabled() const;
 	[[nodiscard]]
 	Bool is_multi_sampling_enabled() const;
+	[[nodiscard]]
+	VkFramebuffer get_framebuffer(UInt64 number) const;
 
+	Void clear_framebuffers(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 	Void clear_images(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 	Void clear(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 
@@ -45,6 +52,7 @@ private:
 	VkSampleCountFlagBits samples;
 	Bool isDepthTest, isMultiSampling;
 	DynamicArray<VkClearValue> clearValues;
+	DynamicArray<VkFramebuffer> framebuffers;
 
 	Void create_depth_attachment(const PhysicalDevice& physicalDevice,
 								 const LogicalDevice& logicalDevice,
@@ -54,5 +62,6 @@ private:
 								 const LogicalDevice& logicalDevice,
 								 const Swapchain& swapchain,
 								 const VkAllocationCallbacks* allocator);
+
 };
 

@@ -251,6 +251,11 @@ Handle<Material> SResourceManager::load_material(const std::filesystem::path& as
 	const UInt64 materialId = materials.size();
 	Material& material		= materials.emplace_back();
 
+	for (Handle<Texture>& handle : material.textures)
+	{
+		handle = Handle<Texture>::sNone;
+	}
+
 	const Int32 albedoId			  = gltfMaterial.pbrMetallicRoughness.baseColorTexture.index;
 	const Int32 metallicRoughnessId   = gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index;
 	const Int32 normalId			  = gltfMaterial.normalTexture.index;
@@ -259,7 +264,7 @@ Handle<Material> SResourceManager::load_material(const std::filesystem::path& as
 	
 	if (albedoId >= 0)
 	{
-	const tinygltf::Texture& texture = gltfModel.textures[albedoId];
+		const tinygltf::Texture& texture = gltfModel.textures[albedoId];
 		const tinygltf::Image& image = gltfModel.images[texture.source];
 		const std::filesystem::path textureName = image.uri;
 		const ETextureType type = ETextureType::Albedo;

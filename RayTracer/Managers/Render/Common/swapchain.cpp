@@ -6,6 +6,8 @@
 #include "image.hpp"
 #include "render_pass.hpp"
 
+#include <magic_enum.hpp>
+
 Void Swapchain::create(const LogicalDevice& logicalDevice, const PhysicalDevice& physicalDevice, const VkSurfaceKHR& surface, const VkAllocationCallbacks* allocator)
 {
     const VkSurfaceCapabilitiesKHR& capabilities = physicalDevice.get_capabilities(surface);
@@ -39,8 +41,7 @@ Void Swapchain::create(const LogicalDevice& logicalDevice, const PhysicalDevice&
         createInfo.imageSharingMode      = VK_SHARING_MODE_CONCURRENT;
         createInfo.queueFamilyIndexCount = queueFamilyIndices.size();
         createInfo.pQueueFamilyIndices   = queueFamilyIndices.data();
-    }
-    else {
+    } else {
         createInfo.imageSharingMode      = VK_SHARING_MODE_EXCLUSIVE;
         createInfo.queueFamilyIndexCount = 0;
         createInfo.pQueueFamilyIndices   = nullptr;
@@ -51,9 +52,11 @@ Void Swapchain::create(const LogicalDevice& logicalDevice, const PhysicalDevice&
     createInfo.clipped          = VK_TRUE;
     createInfo.oldSwapchain     = VK_NULL_HANDLE;
 
-    if (vkCreateSwapchainKHR(logicalDevice.get_device(), &createInfo, allocator, &swapchain) != VK_SUCCESS)
+    VkResult result = vkCreateSwapchainKHR(logicalDevice.get_device(), &createInfo, allocator, &swapchain);
+    if (result != VK_SUCCESS)
     {
-        throw std::runtime_error("failed to create swap chain!");
+        SPDLOG_ERROR("Swapchain creation failed with: {}", magic_enum::enum_name(result));
+        return;
     }
     vkGetSwapchainImagesKHR(logicalDevice.get_device(), swapchain, &imageCount, nullptr);
     images.resize(imageCount);
@@ -61,49 +64,6 @@ Void Swapchain::create(const LogicalDevice& logicalDevice, const PhysicalDevice&
     imageFormat = surfaceFormat.format;
 
     create_image_views(logicalDevice, allocator);
-}
-
-Void Swapchain::create_framebuffers(const LogicalDevice& logicalDevice, const RenderPass& renderPass, const VkAllocationCallbacks* allocator)
-{
-    framebuffers.resize(imageViews.size());
-    const DynamicArray<Image>& renderPassImages = renderPass.get_images();
-    DynamicArray<VkImageView> views;
-    // 1 is for swapchain image view
-    views.resize(renderPassImages.size() + 1);
-
-    for (UInt64 i = 0; i < renderPassImages.size(); ++i)
-    {
-        views[i + 1] = renderPassImages[i].get_view();
-    }
-
-    for (UInt64 i = 0; i < imageViews.size(); ++i)
-    {
-        views[0] = imageViews[i];
-
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass      = renderPass.get_render_pass();
-        framebufferInfo.attachmentCount = UInt32(views.size());
-        framebufferInfo.pAttachments    = views.data();
-        framebufferInfo.width           = extent.x;
-        framebufferInfo.height          = extent.y;
-        framebufferInfo.layers          = 1;
-
-        if (vkCreateFramebuffer(logicalDevice.get_device(), &framebufferInfo, allocator, &framebuffers[i]) != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to create framebuffer!");
-        }
-    }
-}
-
-VkFramebuffer Swapchain::get_framebuffer(UInt64 number) const
-{
-    if (number < 0 || number > framebuffers.size())
-    {
-        SPDLOG_ERROR("Failed to get framebuffer {} is out of bounds, returned nullptr", number);
-        return nullptr;
-    }
-    return framebuffers[number];
 }
 
 const VkSwapchainKHR& Swapchain::get_swapchain() const
@@ -202,11 +162,6 @@ UVector2 Swapchain::choose_swap_extent(const VkSurfaceCapabilitiesKHR& capabilit
 
 Void Swapchain::clear(const LogicalDevice& device, const VkAllocationCallbacks* allocator)
 {
-    for (VkFramebuffer framebuffer : framebuffers)
-    {
-        vkDestroyFramebuffer(device.get_device(), framebuffer, allocator);
-    }
-
     for (VkImageView imageView : imageViews)
     {
         vkDestroyImageView(device.get_device(), imageView, allocator);

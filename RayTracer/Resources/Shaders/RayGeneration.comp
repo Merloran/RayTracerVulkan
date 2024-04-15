@@ -16,7 +16,7 @@ layout( push_constant ) uniform PushConstants
 void main()
 {
     ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
-    if (gid.x >= imageSize.x || gid.y >= imageSize.y)
+    if (gid.x >= constants.imageSize.x || gid.y >= constants.imageSize.y)
 	{
         return;
     }

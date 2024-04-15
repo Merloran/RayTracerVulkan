@@ -39,6 +39,18 @@ Void SRenderManager::startup()
     create_surface();
     physicalDevice.select_physical_device(instance, surface);
     logicalDevice.create(physicalDevice, debugMessenger, nullptr);
+
+    for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    {
+        create_dynamic_buffer<UniformBufferObject>(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    }
+    create_graphics_descriptors();
+    graphicsPool = create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    create_command_buffers(get_command_pool_by_handle(graphicsPool),
+                           VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                           { "Graphics1", "Graphics2" });
+    create_synchronization_objects();
+
     //Shaders should be created after logical device
     Handle<Shader> vert = load_shader(SHADERS_PATH + "Shader.vert", EShaderType::Vertex);
     Handle<Shader> frag = load_shader(SHADERS_PATH + "Shader.frag", EShaderType::Fragment);
@@ -46,23 +58,9 @@ Void SRenderManager::startup()
     shaders.emplace_back(get_shader_by_handle(vert));
     shaders.emplace_back(get_shader_by_handle(frag));
     swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
-    for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        create_dynamic_buffer<UniformBufferObject>(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-    }
-    create_graphics_descriptors();
-
-    graphicsPool = create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-    create_command_buffers(get_command_pool_by_handle(graphicsPool), 
-                           VK_COMMAND_BUFFER_LEVEL_PRIMARY, 
-                           { "Graphics1", "Graphics2" });
-
     renderPass.create(physicalDevice, logicalDevice, swapchain, nullptr, physicalDevice.get_max_samples());
-    swapchain.create_framebuffers(logicalDevice, renderPass, nullptr);
 
     graphicsPipeline.create_graphics_pipeline(descriptorPool, renderPass, shaders, logicalDevice, nullptr);
-
-    create_synchronization_objects();
 }
 
 Void SRenderManager::setup_imgui()
@@ -307,7 +305,7 @@ Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
     stagingBuffer.clear(logicalDevice, nullptr);
 }
 
-Handle<Image> SRenderManager::create_image(const UVector2& size, VkFormat format, VkImageUsageFlagBits usage, VkImageTiling tiling, UInt32 mipLevels)
+Handle<Image> SRenderManager::create_image(const UVector2& size, VkFormat format, VkImageUsageFlags usage, VkImageTiling tiling, UInt32 mipLevels)
 {
 	const Handle<Image> handle = { Int32(images.size()) };
     Image& image = images.emplace_back();
@@ -388,7 +386,7 @@ Void SRenderManager::reload_shaders()
     graphicsPipeline.recreate_pipeline(descriptorPool, renderPass, shaders, logicalDevice, nullptr);
 }
 
-Void SRenderManager::render_imgui()
+Void SRenderManager::render_imgui(Bool& isRaytracing)
 {
     // Start the Dear ImGui frame
     ImGui_ImplVulkan_NewFrame();
@@ -405,6 +403,8 @@ Void SRenderManager::render_imgui()
     {
         reload_shaders();
     }
+
+	ImGui::Checkbox("Raytrace enabled", &isRaytracing);
 
     ImGuiIO& io = ImGui::GetIO(); (Void)io;
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
@@ -486,6 +486,16 @@ const PhysicalDevice& SRenderManager::get_physical_device() const
 const LogicalDevice& SRenderManager::get_logical_device() const
 {
     return logicalDevice;
+}
+
+Swapchain& SRenderManager::get_swapchain()
+{
+    return swapchain;
+}
+
+DescriptorPool& SRenderManager::get_pool()
+{
+    return descriptorPool;
 }
 
 Void SRenderManager::create_vulkan_instance()
@@ -623,7 +633,7 @@ Void SRenderManager::create_command_buffers(VkCommandPool pool, VkCommandBufferL
     }
 }
 
-Void SRenderManager::recreate_swapchain(Swapchain& swapchain, RenderPass& renderPass) const
+Void SRenderManager::recreate_swapchain(Swapchain& swapchain, RenderPass& renderPass)
 {
     SDisplayManager& displayManager = SDisplayManager::get();
     IVector2 windowSize = displayManager.get_framebuffer_size();
@@ -636,21 +646,23 @@ Void SRenderManager::recreate_swapchain(Swapchain& swapchain, RenderPass& render
     logicalDevice.wait_idle();
 
     swapchain.clear(logicalDevice, nullptr);
+    renderPass.clear_framebuffers(logicalDevice, nullptr);
     renderPass.clear_images(logicalDevice, nullptr);
 
     swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
     renderPass.create_attachments(physicalDevice, logicalDevice, swapchain, nullptr);
-    swapchain.create_framebuffers(logicalDevice, renderPass, nullptr);
+    renderPass.create_framebuffers(logicalDevice, swapchain, nullptr);
 }
 
 Void SRenderManager::create_graphics_descriptors()
 {
+    SResourceManager& resourceManager = SResourceManager::get();
     descriptorPool.add_binding("TexturesDataLayout",
                                2,
                                0,
                                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                               1000,
-                               VK_SHADER_STAGE_FRAGMENT_BIT,
+                               resourceManager.get_textures().size(),
+                               VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT,
                                VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
                                VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
                                VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
@@ -1151,9 +1163,9 @@ Void SRenderManager::shutdown_imgui()
 
 Void SRenderManager::shutdown()
 {
-    SPDLOG_INFO("Wait until frame end...");
-    logicalDevice.wait_idle();
     SPDLOG_INFO("Render Manager shutdown.");
+    logicalDevice.wait_idle();
+    SPDLOG_INFO("Wait until frame end...");
 
     shutdown_imgui();
 
@@ -1178,7 +1190,6 @@ Void SRenderManager::shutdown()
     }
 
     descriptorPool.clear(logicalDevice, nullptr);
-    computePipeline.clear(logicalDevice, nullptr);
     graphicsPipeline.clear(logicalDevice, nullptr);
     renderPass.clear(logicalDevice, nullptr);
     swapchain.clear(logicalDevice, nullptr);

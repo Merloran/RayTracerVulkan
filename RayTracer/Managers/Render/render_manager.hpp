@@ -63,7 +63,7 @@ public:
 	Void create_texture_image(Texture& texture, UInt32 mipLevels = 1);
 	Handle<Image> create_image(const UVector2& size, 
 							   VkFormat format, 
-							   VkImageUsageFlagBits usage, 
+							   VkImageUsageFlags usage, 
 							   VkImageTiling tiling,
 							   UInt32 mipLevels = 1);
 	Void transition_image_layout(Image& image,
@@ -74,7 +74,7 @@ public:
 	Void setup_graphics_descriptors(const DynamicArray<Texture>& textures);
 	Void reload_shaders();
 	
-	Void render_imgui();
+	Void render_imgui(Bool& isRaytracing);
 	Void render(Camera& camera, const DynamicArray<Model>& models, Float32 time);
 
 	[[nodiscard]]
@@ -83,6 +83,8 @@ public:
 	const PhysicalDevice& get_physical_device() const;
 	[[nodiscard]]
 	const LogicalDevice& get_logical_device() const;
+	Swapchain& get_swapchain();
+	DescriptorPool& get_pool();
 
 	[[nodiscard]]
 	const Handle<Shader>& get_shader_handle_by_name(const String& name)  const;
@@ -163,7 +165,7 @@ public:
 	Handle<VkCommandPool> create_command_pool(VkCommandPoolCreateFlagBits flags);
 	Void create_command_buffers(Handle<VkCommandPool> handle, VkCommandBufferLevel level, const DynamicArray<String>& names);
 	Void create_command_buffers(VkCommandPool pool, VkCommandBufferLevel level, const DynamicArray<String>& names);
-	Void recreate_swapchain(Swapchain &swapchain, RenderPass &renderPass) const;
+	Void recreate_swapchain(Swapchain &swapchain, RenderPass &renderPass);
 
 	Void shutdown_imgui();
 	Void shutdown();
@@ -182,7 +184,6 @@ private:
 	RenderPass renderPass;
 	DescriptorPool descriptorPool;
 	Pipeline graphicsPipeline;
-	Pipeline computePipeline;
 	DynamicArray<Shader> shaders;
 	HashMap<String, Handle<Shader>> nameToIdShaders;
 	

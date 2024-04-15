@@ -311,6 +311,7 @@ DynamicArray<VkDescriptorSetLayout> DescriptorPool::get_layouts() const
         if (data.layout == VK_NULL_HANDLE)
         {
             layouts.push_back(empty);
+            continue;
         }
         layouts.push_back(data.layout);
     }

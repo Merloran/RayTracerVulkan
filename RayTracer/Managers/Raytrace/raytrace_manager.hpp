@@ -23,22 +23,22 @@ struct GPUMaterial
 
 struct RayGenerationConstants
 {
-	FVector3 cameraPosition;
-	FVector3 originPixel;
-	FVector3 pixelDeltaU;
-	FVector3 pixelDeltaV;
+	alignas(16) FVector3 cameraPosition;
+	alignas(16) FVector3 originPixel;
+	alignas(16) FVector3 pixelDeltaU;
+	alignas(16) FVector3 pixelDeltaV;
 	IVector2 imageSize;
 };
 
 struct RaytraceConstants
 {
-	FVector3 backgroundColor;
-	FVector3 cameraPosition;
-	FVector3 pixelDeltaU;
-	FVector3 pixelDeltaV;
+	alignas(16) FVector3 backgroundColor;
+	alignas(16) FVector3 cameraPosition;
+	alignas(16) FVector3 pixelDeltaU;
+	alignas(16) FVector3 pixelDeltaV;
 	FVector2 viewBounds;
-	Float32  time;
 	IVector2 imageSize;
+	Float32  time;
 	Int32	 frameCount;
 	Int32	 maxBouncesCount;
 	Int32	 trianglesCount;
@@ -49,6 +49,7 @@ struct RaytraceConstants
 
 struct PostprocessConstants
 {
+	IVector2 imageSize;
 	Float32 invFrameCount;
 };
 
@@ -83,14 +84,13 @@ private:
 	SRaytraceManager() = default;
 	~SRaytraceManager() = default;
 	static constexpr IVector2 WORKGROUP_SIZE{ 16, 16 };
-	DescriptorPool descriptorPool;
+	DescriptorPool raytracePool, rayGenerationPool, postprocessPool;
 	Pipeline rayGenerationPipeline, raytracePipeline, postprocessPipeline;
 	RenderPass postprocessPass;
-	Swapchain postprocessSwapchain;
 
 	Handle<Buffer> quadIndexes, quadPositions, quadUvs;
-	Handle<VkCommandPool> raytracePool;
-	Handle<CommandBuffer> raytraceBuffer;
+	Handle<VkCommandPool> raytraceCommandPool;
+	Handle<CommandBuffer> raytraceBuffer, renderBuffer;
 	Handle<Shader> rayGeneration, raytrace, screenV, screenF;
 	Handle<Buffer> vertexesHandle, indexesHandle, materialsHandle, bvhHandle, emissionTrianglesHandle;
 	Handle<DescriptorSetData> sceneData, accumulationImage, directionImage, bindlessTextures;
@@ -106,14 +106,17 @@ private:
 	Float32 renderTime;
 	Int32 frameCount, trianglesCount;
 	Bool shouldRefresh;
+	VkFence raytraceInFlight, renderInFlight;
+	VkSemaphore imageAvailable, renderFinished, rayGenerationFinished, raytraceFinished;
+	Bool firstFrame, areRaysRegenerated;
 
-
-	Void render();
 	Void resize_images(const UVector2& size);
-	Void ray_trace(Camera& camera);
 	Void generate_rays(Camera& camera);
+	Void ray_trace(Camera& camera);
+	Void render();
 	Void create_pipelines();
 	Void create_descriptors();
 	Void setup_descriptors();
 	Void create_quad_buffers();
+	Void create_synchronization_objects();
 };

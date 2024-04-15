@@ -137,10 +137,17 @@ Void Pipeline::create_graphics_pipeline(const DescriptorPool& descriptorPool, co
     pipelineInfo.basePipelineHandle  = VK_NULL_HANDLE; // Optional
     pipelineInfo.basePipelineIndex   = -1; // Optional
 
-    if (vkCreateGraphicsPipelines(logicalDevice.get_device(), VK_NULL_HANDLE, 
-								  1, &pipelineInfo, allocator, &pipeline) != VK_SUCCESS)
+    VkResult result = vkCreateGraphicsPipelines(logicalDevice.get_device(),
+                                                cache,
+                                                1, 
+                                                &pipelineInfo, 
+                                                allocator, 
+                                                &pipeline);
+
+    if (result != VK_SUCCESS)
     {
-        throw std::runtime_error("failed to create graphics pipeline!");
+        SPDLOG_ERROR("Creating graphics pipeline failed with: {}", magic_enum::enum_name(result));
+        return;
     }
     type = EPipelineType::Graphics;
     bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -150,7 +157,7 @@ Void Pipeline::create_compute_pipeline(const DescriptorPool& descriptorPool, con
 {
     create_layout(descriptorPool.get_layouts(), descriptorPool.get_push_constants(), logicalDevice, allocator);
 
-    VkPipelineShaderStageCreateInfo shaderStageInfo;
+    VkPipelineShaderStageCreateInfo shaderStageInfo{};
     const Bool isValid = create_shader_stage_info(shader, shaderStageInfo);
 
     if (!isValid)
@@ -159,14 +166,23 @@ Void Pipeline::create_compute_pipeline(const DescriptorPool& descriptorPool, con
     }
 
     VkComputePipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    pipelineInfo.layout = layout;
-    pipelineInfo.stage  = shaderStageInfo;
+    pipelineInfo.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.layout             = layout;
+    pipelineInfo.stage              = shaderStageInfo;
+    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+    pipelineInfo.basePipelineIndex  = -1;
 
-    if (vkCreateComputePipelines(logicalDevice.get_device(), VK_NULL_HANDLE, 
-								 1, &pipelineInfo, allocator, &pipeline) != VK_SUCCESS)
+    const VkResult result = vkCreateComputePipelines(logicalDevice.get_device(),
+                                                     cache,
+                                                     1,
+                                                     &pipelineInfo,
+                                                     allocator,
+                                                     &pipeline);
+
+    if (result != VK_SUCCESS)
     {
-        throw std::runtime_error("failed to create compute pipeline!");
+        SPDLOG_ERROR("Creating compute pipeline failed with: {}", magic_enum::enum_name(result));
+        return;
     }
     type = EPipelineType::Compute;
     bindPoint = VK_PIPELINE_BIND_POINT_COMPUTE;

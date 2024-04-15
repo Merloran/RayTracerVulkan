@@ -55,7 +55,7 @@ public:
 
         Bool result = true;
         const UInt32 elementsCount = sizeof(FeatureType) / sizeof(UInt32);
-        const UInt32 firstFeatureOffset = 3;
+        const UInt32 firstFeatureOffset = 4; // sType is 4 bytes but it is before void* so it is aligned to 8 bytes
         for (UInt32 i = firstFeatureOffset; i < elementsCount; ++i)
         {
 	        if (requestedFeature[i] > supportedFeature[i])
@@ -104,7 +104,8 @@ private:
     const DynamicArray<const Char*> deviceExtensions =
     {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME
+        VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+        VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,
     };
 
     Bool is_device_suitable(VkSurfaceKHR surface);

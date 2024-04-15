@@ -28,7 +28,7 @@ Void CommandBuffer::begin_render_pass(const RenderPass& renderPass, const Swapch
     const UVector2& extent = swapchain.get_extent();
     renderPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass        = renderPass.get_render_pass();
-    renderPassInfo.framebuffer       = swapchain.get_framebuffer(imageIndex);
+    renderPassInfo.framebuffer       = renderPass.get_framebuffer(imageIndex);
     renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = VkExtent2D{ extent.x, extent.y };
     renderPassInfo.clearValueCount   = UInt32(clearValues.size());
@@ -122,7 +122,11 @@ Void CommandBuffer::end() const
 
 Void CommandBuffer::reset(VkCommandBufferResetFlags flags) const
 {
-	vkResetCommandBuffer(buffer, flags);
+    const VkResult result = vkResetCommandBuffer(buffer, flags);
+    if (result != VK_SUCCESS)
+    {
+        SPDLOG_ERROR("Command buffer: {}, reset failed with result: {}.", name, magic_enum::enum_name(result));
+    }
 }
 
 const VkCommandBuffer& CommandBuffer::get_buffer() const

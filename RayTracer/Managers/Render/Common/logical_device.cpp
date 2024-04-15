@@ -27,10 +27,16 @@ Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMess
     }
 
     //PHYSICAL DEVICE FEATURES
+    VkPhysicalDeviceRobustness2FeaturesEXT robustness2Features{};
+    robustness2Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT;
+    robustness2Features.pNext = nullptr;
+    robustness2Features.nullDescriptor = VK_TRUE;
+
     VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures{};
     descriptorIndexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
-    descriptorIndexingFeatures.pNext = nullptr;
+    descriptorIndexingFeatures.pNext = &robustness2Features;
 	descriptorIndexingFeatures.shaderSampledImageArrayNonUniformIndexing     = VK_TRUE;
+    descriptorIndexingFeatures.descriptorBindingStorageImageUpdateAfterBind  = VK_TRUE;
     descriptorIndexingFeatures.descriptorBindingSampledImageUpdateAfterBind  = VK_TRUE;
     descriptorIndexingFeatures.shaderUniformBufferArrayNonUniformIndexing    = VK_TRUE;
     descriptorIndexingFeatures.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
@@ -45,7 +51,8 @@ Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMess
     deviceFeatures.features.samplerAnisotropy = VK_TRUE;
     deviceFeatures.features.sampleRateShading = VK_TRUE;
     if (!physicalDevice.are_features_supported(deviceFeatures.features) ||
-        !physicalDevice.are_features_supported(descriptorIndexingFeatures))
+        !physicalDevice.are_features_supported(descriptorIndexingFeatures) ||
+        !physicalDevice.are_features_supported(robustness2Features))
     {
         return;
     }
@@ -231,7 +238,7 @@ VkResult LogicalDevice::submit_present_queue(const DynamicArray<VkSemaphore>& wa
 
 VkResult LogicalDevice::submit_present_queue(VkSemaphore waitSemaphore, const Swapchain& swapchain, VkResult* result, Void* next) const
 {
-    VkPresentInfoKHR presentInfo;
+    VkPresentInfoKHR presentInfo{};
     presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.pNext              = next;
     presentInfo.waitSemaphoreCount = 1;

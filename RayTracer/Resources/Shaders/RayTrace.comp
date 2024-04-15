@@ -36,8 +36,8 @@ struct Triangle
 struct BVHNode
 {
 	vec3 min;
-    int leftId;
 	vec3 max;
+    int leftId;
     int rightId;
 	int parentId;
 	int nextId;
@@ -60,6 +60,7 @@ struct Vertex
 	vec3 position;
 	vec3 normal;
 	vec2 uv;
+	int materialId;
 };
 
 layout(std430, binding = 0) readonly buffer Vertexes
@@ -94,7 +95,6 @@ layout (rgba32f, set = 3, binding = 0) uniform image2D accumulated;
 
 layout( push_constant ) uniform PushConstants
 {
-	layout(offset = 56) // RayGenerationConstants
 	vec3  backgroundColor;
 	vec3  cameraPosition;
 	vec3  pixelDeltaU;
@@ -156,24 +156,24 @@ float get_pdf_value(vec3 origin, vec3 direction, vec3 normal);
 void main()
 {
     ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
-    if (gid.x >= imageSize.x || gid.y >= imageSize.y)
+    if (gid.x >= constants.imageSize.x || gid.y >= constants.imageSize.y)
 	{
         return;
     }
-	seed = vec2(gid) + time;
+	seed = vec2(gid) + constants.time;
     vec3 color = vec3(1.0f);
 	
 	Ray ray;
-	ray.origin = cameraPosition;
+	ray.origin = constants.cameraPosition;
 	const int numberOfSectors = 64;
-	ivec2 gridOffset = ivec2(mod(frameCount, numberOfSectors), int(frameCount / numberOfSectors));
+	ivec2 gridOffset = ivec2(mod(constants.frameCount, numberOfSectors), int(constants.frameCount / numberOfSectors));
 	gridOffset = ivec2(mod(gridOffset, numberOfSectors));
 	vec2 offset = (vec2(rand(), rand()) + vec2(gridOffset)) / float(numberOfSectors) - 0.5f;
-	vec3 randomOffset = (offset.x * pixelDeltaU) + (offset.y * pixelDeltaV);
+	vec3 randomOffset = (offset.x * constants.pixelDeltaU) + (offset.y * constants.pixelDeltaV);
 	ray.direction = normalize(imageLoad(rayDirections, gid).xyz + randomOffset);
 	
 	
-	for (int bounce = 0; bounce < maxBouncesCount + 1; ++bounce) 
+	for (int bounce = 0; bounce < constants.maxBouncesCount + 1; ++bounce) 
 	{
 		if (all(equal(color, vec3(0.0f))))
 		{
@@ -184,7 +184,7 @@ void main()
         if (!hit(ray, info)) 
 		{
 			vec2 uv = sample_sphere(ray.direction);
-			vec3 background = texture(textures[environmentMapId], uv).rgb;
+			vec3 background = texture(textures[constants.environmentMapId], uv).rgb;
             color *= background;
             break;
 		}
@@ -435,23 +435,23 @@ vec2 sample_sphere(vec3 direction)
 
 void get_triangle(int triangleId, out Triangle triangle)
 {
-	uint indices[3] = 
-	{
-		indexes[triangleId + 0],
-		indexes[triangleId + 1],
-		indexes[triangleId + 2]
-	};
+	Vertex v1 = vertexes[indexes[triangleId + 0]];
+	Vertex v2 = vertexes[indexes[triangleId + 1]];
+	Vertex v3 = vertexes[indexes[triangleId + 2]];
 	
-	triangle.materialId = floatBitsToInt(positionsWithMaterial[indices[0]].w);
-	triangle.points[0] = positionsWithMaterial[indices[0]].xyz;
-	triangle.points[1] = positionsWithMaterial[indices[1]].xyz;
-	triangle.points[2] = positionsWithMaterial[indices[2]].xyz;
-	triangle.normals[0] = normals[indices[0]].xyz;
-	triangle.normals[1] = normals[indices[1]].xyz;
-	triangle.normals[2] = normals[indices[2]].xyz;
-	triangle.uvs[0] = uvs[indices[0]];
-	triangle.uvs[1] = uvs[indices[1]];
-	triangle.uvs[2] = uvs[indices[2]];
+	triangle.materialId = v1.materialId;
+	
+	triangle.points[0]  = v1.position;
+	triangle.points[1]  = v2.position;
+	triangle.points[2]  = v3.position;
+	
+	triangle.normals[0] = v1.normal;
+	triangle.normals[1] = v2.normal;
+	triangle.normals[2] = v3.normal;
+	
+	triangle.uvs[0] 	= v1.uv;
+	triangle.uvs[1] 	= v2.uv;
+	triangle.uvs[2] 	= v3.uv;
 }
 
 vec4 get_color_from_texture(int textureId, vec2 uv)
@@ -500,7 +500,7 @@ bool triangle_intersect(int triangleId, in Ray ray, out HitInfo info)
     // At this stage we can compute distance to find out where the intersection point is on the line.
     float d = invDet * dot(edge2, sXe1);
 
-    if (d < viewBounds.x || d > viewBounds.y)
+    if (d < constants.viewBounds.x || d > constants.viewBounds.y)
     {
 		// This means that there is a line intersection but not a ray intersection.
 		return false;
@@ -561,9 +561,9 @@ bool hit(in Ray ray, out HitInfo info)
 	bool result = false;
 	HitInfo tempInfo;
 	
-	info.distance = viewBounds.y + 1.0f;
+	info.distance = constants.viewBounds.y + 1.0f;
 	tempInfo.distance = info.distance + 1.0f;
-	int nodeId = rootId;
+	int nodeId = constants.rootId;
 	
 	while (nodeId != -1)
 	{
@@ -635,9 +635,9 @@ vec3 get_cosine_direction(vec3 normal)
 
 float get_triangle_area(int triangleId)
 {
-	vec3 a = positionsWithMaterial[indexes[triangleId + 0]].xyz;
-	vec3 b = positionsWithMaterial[indexes[triangleId + 1]].xyz;
-	vec3 c = positionsWithMaterial[indexes[triangleId + 2]].xyz;
+	vec3 a = vertexes[indexes[triangleId + 0]].position;
+	vec3 b = vertexes[indexes[triangleId + 1]].position;
+	vec3 c = vertexes[indexes[triangleId + 2]].position;
 	
 	vec3 u = b - a;
 	vec3 v = c - a;
@@ -663,9 +663,9 @@ float get_triangle_pdf(int triangleId, vec3 origin, vec3 direction)
 
 vec3 get_random_in_triangle(int triangleId)
 {
-	vec3 a = positionsWithMaterial[indexes[triangleId + 0]].xyz;
-	vec3 b = positionsWithMaterial[indexes[triangleId + 1]].xyz;
-	vec3 c = positionsWithMaterial[indexes[triangleId + 2]].xyz;
+	vec3 a = vertexes[indexes[triangleId + 0]].position;
+	vec3 b = vertexes[indexes[triangleId + 1]].position;
+	vec3 c = vertexes[indexes[triangleId + 2]].position;
 	
 	vec3 u = b - a;
 	vec3 v = c - a;
@@ -679,10 +679,10 @@ vec3 get_random_in_triangle(int triangleId)
 
 float get_lights_pdf(vec3 origin, vec3 direction)
 {
-	float weight = 1.0f / float(emissionTrianglesCount);
+	float weight = 1.0f / float(constants.emissionTrianglesCount);
 	float sum = 0.0f;
 	
-	for (int triangleId = 0; triangleId < emissionTrianglesCount; ++triangleId)
+	for (int triangleId = 0; triangleId < constants.emissionTrianglesCount; ++triangleId)
 	{
 		sum += weight * get_triangle_pdf(triangleId, origin, direction);
 	}
@@ -691,7 +691,7 @@ float get_lights_pdf(vec3 origin, vec3 direction)
 
 vec3 get_light_path(vec3 origin)
 {
-	int triangleId = int(rand() * float(emissionTrianglesCount - 1));
+	int triangleId = int(rand() * float(constants.emissionTrianglesCount - 1));
 	
 	return get_random_in_triangle(triangleId) - origin;
 }
