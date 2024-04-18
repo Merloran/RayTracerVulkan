@@ -1,6 +1,8 @@
 #pragma once
 #include <vulkan/vulkan.hpp>
 
+class Image;
+class Buffer;
 class Pipeline;
 class Swapchain;
 class RenderPass;
@@ -27,7 +29,7 @@ public:
 	template<UInt32 size>
 	Void bind_vertex_buffers(UInt32 firstBinding, const Array<VkBuffer, size> &vertexBuffers, const Array<UInt64, size> &offsets) const
 	{
-		vkCmdBindVertexBuffers(buffer,
+		vkCmdBindVertexBuffers(commandBuffer,
 							   firstBinding,
 							   vertexBuffers.size(),
 							   vertexBuffers.data(),
@@ -51,6 +53,42 @@ public:
 	Void set_scissors(UInt32 firstScissor, const DynamicArray<VkRect2D> &scissors) const;
 	Void set_scissor(UInt32 firstScissor, const IVector2 &position, const UVector2 &size) const;
 
+	Void pipeline_barrier(VkPipelineStageFlags						sourceStage, 
+						  VkPipelineStageFlags						destinationStage, 
+						  VkDependencyFlags							dependencies,
+						  const DynamicArray<VkMemoryBarrier>		&memoryBarriers, 
+						  const DynamicArray<VkBufferMemoryBarrier> &bufferBarriers, 
+						  const DynamicArray<VkImageMemoryBarrier>	&imageBarriers) const;
+
+	Void pipeline_memory_barrier(VkPipelineStageFlags sourceStage, 
+								 VkPipelineStageFlags destinationStage, 
+								 VkDependencyFlags	  dependencies,
+								 VkAccessFlags		  sourceAccess,
+								 VkAccessFlags		  destinationAccess,
+								 Void*				  next = nullptr) const;
+
+	Void pipeline_buffer_barrier(VkPipelineStageFlags sourceStage, 
+								 VkPipelineStageFlags destinationStage, 
+								 VkDependencyFlags	  dependencies,
+								 VkAccessFlags		  sourceAccess,
+								 VkAccessFlags		  destinationAccess,
+								 UInt32				  sourceQueueIndex,
+								 UInt32				  destinationQueueIndex,
+								 const Buffer		  &buffer,
+								 UInt64				  offset = 0,
+								 Void*				  next = nullptr) const;
+
+	Void pipeline_image_barrier(VkPipelineStageFlags sourceStage, 
+								VkPipelineStageFlags destinationStage, 
+								VkDependencyFlags	 dependencies,
+								VkAccessFlags		 sourceAccess,
+								VkAccessFlags		 destinationAccess,
+								UInt32				 sourceQueueIndex,
+								UInt32				 destinationQueueIndex,
+								Image				 &image,
+								VkImageLayout		 newLayout,
+								Void*				 next = nullptr) const;
+
 	Void end_render_pass() const;
 
 	Void end() const;
@@ -66,7 +104,7 @@ public:
 	Void set_buffer(VkCommandBuffer buffer);
 
 private:
-	VkCommandBuffer buffer;
+	VkCommandBuffer commandBuffer;
 	String name;
 
 };

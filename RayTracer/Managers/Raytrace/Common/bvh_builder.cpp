@@ -28,7 +28,7 @@ Void BVHBuilder::create_tree(const DynamicArray<Vertex>& vertexes, const Dynamic
     for (UInt64 triangleId = 0; triangleId < indexes.size(); triangleId += 3)
     {
         BVHNode node;
-        const FVector3& a = vertexes[indexes[triangleId]].position;
+        const FVector3& a = vertexes[indexes[triangleId + 0]].position;
         const FVector3& b = vertexes[indexes[triangleId + 1]].position;
         const FVector3& c = vertexes[indexes[triangleId + 2]].position;
 
@@ -67,12 +67,10 @@ Void BVHBuilder::fill_stackless_data(Int32 nodeId, Int32 parentId)
             if (nodeId == parentNode.leftId)
             {
                 node.skipId = parentNode.rightId;
-            }
-            else {
+            } else {
                 node.skipId = parentNode.skipId;
             }
-        }
-        else {
+        } else {
             node.skipId = -1;
         }
         fill_stackless_data(node.leftId, nodeId);
@@ -94,8 +92,7 @@ Void BVHBuilder::fill_stackless_data(Int32 nodeId, Int32 parentId)
     {
         node.nextId = parentNode.rightId;
         node.skipId = parentNode.rightId;
-    }
-    else {
+    } else {
         node.nextId = parentNode.skipId;
         node.skipId = parentNode.skipId;
     }
@@ -189,7 +186,7 @@ Void BVHBuilder::max(const FVector3& a, const FVector3& b, const FVector3& c, FV
 
 Void BVHBuilder::pad(BVHNode& node)
 {
-    const Float32 delta = 0.001953125f; // DO NOT ASK XD
+    const Float32 delta = 0.015625f; // 1 / 2^6
     FVector3 size = node.max - node.min;
     for (Int32 i = 0; i < 3; ++i)
     {

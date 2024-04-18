@@ -23,6 +23,10 @@ Void SResourceManager::startup()
 {
 	SPDLOG_INFO("Resource Manager startup.");
 	Material defaultMaterial;
+	for (Handle<Texture>& texture : defaultMaterial.textures)
+	{
+		texture = Handle<Texture>::sNone;
+	}
 	defaultMaterial.name = "DefaultMaterial";
 
 	defaultMaterial.textures[UInt64(ETextureType::Albedo)] = load_texture(TEXTURES_PATH + "Default/Albedo.png",
@@ -386,7 +390,7 @@ Handle<Texture> SResourceManager::load_texture(const std::filesystem::path& file
 Handle<Material> SResourceManager::create_material(const Material& material, const String& name)
 {
 	const UInt64 materialId = materials.size();
-	materials.emplace_back(material);
+	Material& newMaterial = materials.emplace_back(material);
 	const Handle<Material> materialHandle{ Int32(materialId) };
 	nameToIdMaterials[name] = materialHandle;
 	return materialHandle;

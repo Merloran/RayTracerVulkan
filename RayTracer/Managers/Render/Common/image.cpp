@@ -3,14 +3,14 @@
 #include "physical_device.hpp"
 #include "logical_device.hpp"
 
-Void Image::create(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const UVector2& size, UInt32 mipLevels, VkSampleCountFlagBits samplesCount, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImageAspectFlags aspectFlags, const VkAllocationCallbacks* allocator)
+Void Image::create(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const UVector2& size, UInt32 mipLevel, VkSampleCountFlagBits samplesCount, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImageAspectFlags aspectFlags, const VkAllocationCallbacks* allocator)
 {
     if (!(physicalDevice.get_format_properties(format).optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
     {
         SPDLOG_ERROR("Texture iamge format not support linear blitting, mip levels set to 1");
-        this->mipLevels = 1;
+        this->mipLevel = 1;
     } else {
-        this->mipLevels = mipLevels;
+        this->mipLevel = mipLevel;
     }
 
     this->format       = format;
@@ -25,7 +25,7 @@ Void Image::create(const PhysicalDevice& physicalDevice, const LogicalDevice& lo
     imageInfo.extent.width  = size.x;
     imageInfo.extent.height = size.y;
     imageInfo.extent.depth  = 1;
-    imageInfo.mipLevels     = this->mipLevels;
+    imageInfo.mipLevels     = this->mipLevel;
     imageInfo.arrayLayers   = 1;
     imageInfo.format        = format;
     imageInfo.tiling        = tiling;
@@ -68,8 +68,8 @@ Void Image::create_view(const LogicalDevice& logicalDevice, VkImageAspectFlags a
     viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
     viewInfo.format                          = format;
     viewInfo.subresourceRange.aspectMask     = aspectFlags;
-    viewInfo.subresourceRange.baseMipLevel   = 0;
-    viewInfo.subresourceRange.levelCount     = mipLevels;
+    viewInfo.subresourceRange.baseMipLevel   = 0; //TODO: think of it
+    viewInfo.subresourceRange.levelCount     = mipLevel;
     viewInfo.subresourceRange.baseArrayLayer = 0;
     viewInfo.subresourceRange.layerCount     = 1;
     
@@ -83,11 +83,20 @@ Void Image::create_sampler(const PhysicalDevice& physicalDevice, const LogicalDe
 {
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType                   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.pNext                   = nullptr;
+    samplerInfo.flags                   = 0;
     samplerInfo.magFilter               = VK_FILTER_LINEAR;
     samplerInfo.minFilter               = VK_FILTER_LINEAR;
-    samplerInfo.addressModeU            = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeV            = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW            = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    if (format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_R8G8B8A8_SRGB)
+    {
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    } else {
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    }
     samplerInfo.anisotropyEnable        = VK_TRUE;
     samplerInfo.maxAnisotropy           = physicalDevice.get_properties().limits.maxSamplerAnisotropy;
     samplerInfo.borderColor             = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
@@ -97,7 +106,7 @@ Void Image::create_sampler(const PhysicalDevice& physicalDevice, const LogicalDe
     samplerInfo.mipmapMode              = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     samplerInfo.mipLodBias              = 0.0f;
     samplerInfo.minLod                  = 0.0f;
-    samplerInfo.maxLod                  = Float32(mipLevels);
+    samplerInfo.maxLod                  = Float32(mipLevel);
 
     if (vkCreateSampler(logicalDevice.get_device(), &samplerInfo, allocator, &sampler) != VK_SUCCESS)
     {
@@ -111,7 +120,7 @@ Void Image::resize(const PhysicalDevice& physicalDevice, const LogicalDevice& lo
 	const VkSampler holder = sampler;
     sampler = nullptr;
     clear(logicalDevice, allocator);
-    create(physicalDevice, logicalDevice, size, mipLevels, samplesCount, format, tiling, usage, properties, aspectFlags, allocator);
+    create(physicalDevice, logicalDevice, size, mipLevel, samplesCount, format, tiling, usage, properties, aspectFlags, allocator);
     sampler = holder;
 }
 
@@ -135,9 +144,9 @@ VkSampler Image::get_sampler() const
     return sampler;
 }
 
-UInt64 Image::get_mip_levels() const
+UInt32 Image::get_mip_level() const
 {
-    return mipLevels;
+    return mipLevel;
 }
 
 const UVector2& Image::get_size() const
@@ -150,12 +159,17 @@ VkImageLayout Image::get_current_layout() const
     return currentLayout;
 }
 
+VkImageAspectFlags Image::get_aspect_flags() const
+{
+    return aspectFlags;
+}
+
 Void Image::set_current_layout(VkImageLayout layout)
 {
     currentLayout = layout;
 }
 
-VkImageView Image::s_create_view(const LogicalDevice& logicalDevice, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, UInt32 mipLevels, const VkAllocationCallbacks* allocator)
+VkImageView Image::s_create_view(const LogicalDevice& logicalDevice, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, UInt32 mipLevel, const VkAllocationCallbacks* allocator)
 {
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -164,7 +178,7 @@ VkImageView Image::s_create_view(const LogicalDevice& logicalDevice, VkImage ima
     viewInfo.format                          = format;
     viewInfo.subresourceRange.aspectMask     = aspectFlags;
     viewInfo.subresourceRange.baseMipLevel   = 0;
-    viewInfo.subresourceRange.levelCount     = mipLevels;
+    viewInfo.subresourceRange.levelCount     = mipLevel;
     viewInfo.subresourceRange.baseArrayLayer = 0;
     viewInfo.subresourceRange.layerCount     = 1;
     VkImageView view;

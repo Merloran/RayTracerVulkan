@@ -31,6 +31,8 @@ Void SRaytraceManager::startup()
 	SDisplayManager& displayManager = SDisplayManager::get();
 	SRenderManager& renderManager = SRenderManager::get();
 	firstFrame = true;
+	frameLimitReached = false;
+	areRaysRegenerated = false;
 	accumulationTexture.name = "Result.png";
 	accumulationTexture.channels = 4;
 	rayGeneration = renderManager.load_shader(renderManager.SHADERS_PATH + "RayGeneration.comp", EShaderType::Compute);
@@ -40,6 +42,8 @@ Void SRaytraceManager::startup()
 
 	renderTime = 0.0f;
 	maxBouncesCount = 0;
+	frameLimit = 800;
+	frameCount = 0;
 	backgroundColor = { 0.0f, 0.0f, 0.0f };
 
 	materials.reserve(resourceManager.get_materials().size());
@@ -49,7 +53,7 @@ Void SRaytraceManager::startup()
 		gpuMaterial.albedo	  = material.textures[UInt64(ETextureType::Albedo)].id;
 		gpuMaterial.normal	  = material.textures[UInt64(ETextureType::Normal)].id;
 
-		if (material.textures[UInt64(ETextureType::RM)].id != Handle<Texture>::sNone.id)
+		if (material.textures[UInt64(ETextureType::RM)].id == Handle<Texture>::sNone.id)
 		{
 			gpuMaterial.roughness = material.textures[UInt64(ETextureType::Roughness)].id;
 			gpuMaterial.metalness = material.textures[UInt64(ETextureType::Metalness)].id;
@@ -89,9 +93,9 @@ Void SRaytraceManager::startup()
 			for (UInt64 j = 0; j < mesh.positions.size(); ++j)
 			{
 				Vertex& vertex = vertexes.emplace_back();
-				vertex.position   = mesh.positions[i];
-				vertex.normal	  = mesh.normals[i];
-				vertex.uv		  = mesh.uvs[i];
+				vertex.position   = mesh.positions[j];
+				vertex.normal	  = mesh.normals[j];
+				vertex.uv		  = mesh.uvs[j];
 				vertex.materialId = model.materials[i].id;
 			}
 		}
@@ -105,12 +109,13 @@ Void SRaytraceManager::startup()
 			const Mesh& mesh = resourceManager.get_mesh_by_handle(handle);
 			for (UInt64 j = 0; j < mesh.indexes.size(); ++j)
 			{
-				indexes.emplace_back(mesh.indexes[j] + indexesOffset);
-				const GPUMaterial& gpuMaterial = materials[vertexes[mesh.indexes[j] + indexesOffset].materialId];
+				UInt32 index = mesh.indexes[j] + indexesOffset;
+				const GPUMaterial& gpuMaterial = materials[vertexes[index].materialId];
 				if (j % 3 == 0 && gpuMaterial.emission != -1)
 				{
-					emissionTriangles.emplace_back(mesh.indexes[j] + indexesOffset);
+					emissionTriangles.emplace_back(UInt32(indexes.size()));
 				}
+				indexes.emplace_back(index);
 			}
 			indexesOffset += UInt32(mesh.positions.size());
 		}
@@ -121,8 +126,8 @@ Void SRaytraceManager::startup()
 	vertexesHandle			= renderManager.create_static_buffer(vertexes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	indexesHandle			= renderManager.create_static_buffer(indexes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	materialsHandle			= renderManager.create_static_buffer(materials, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-	emissionTrianglesHandle = renderManager.create_static_buffer(emissionTriangles, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 	bvhHandle				= renderManager.create_static_buffer(bvh.hierarchy, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+	emissionTrianglesHandle = renderManager.create_static_buffer(emissionTriangles, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
 
 	accumulationTexture.image = renderManager.create_image(displayManager.get_framebuffer_size(),
@@ -133,26 +138,13 @@ Void SRaytraceManager::startup()
 										  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
 										  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 										  VK_IMAGE_LAYOUT_GENERAL);
-	renderManager.transition_image_layout(renderManager.get_image_by_handle(accumulationTexture.image),
-										  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-										  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-										  VK_IMAGE_LAYOUT_GENERAL);
-	renderManager.transition_image_layout(renderManager.get_image_by_handle(accumulationTexture.image),
-										  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-										  VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-										  VK_IMAGE_LAYOUT_GENERAL);
-
 
 	directionTexture.image = renderManager.create_image(displayManager.get_framebuffer_size(),
 														VK_FORMAT_R32G32B32A32_SFLOAT,
-														VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
+														VK_IMAGE_USAGE_STORAGE_BIT,
 														VK_IMAGE_TILING_OPTIMAL);
 	renderManager.transition_image_layout(renderManager.get_image_by_handle(directionTexture.image),
 										  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-										  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-										  VK_IMAGE_LAYOUT_GENERAL);
-	renderManager.transition_image_layout(renderManager.get_image_by_handle(directionTexture.image),
-										  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 										  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 										  VK_IMAGE_LAYOUT_GENERAL);
 
@@ -164,7 +156,8 @@ Void SRaytraceManager::startup()
 	raytraceCommandPool = renderManager.create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 	renderManager.create_command_buffers(raytraceCommandPool,
 										 VK_COMMAND_BUFFER_LEVEL_PRIMARY, 
-										 { "RaytraceBuffer", "RenderBuffer" });
+										 { "RayGenerationBuffer" ,"RaytraceBuffer", "RenderBuffer"});
+	rayGenerationBuffer = renderManager.get_command_buffer_handle_by_name("RayGenerationBuffer");
 	raytraceBuffer = renderManager.get_command_buffer_handle_by_name("RaytraceBuffer");
 	renderBuffer = renderManager.get_command_buffer_handle_by_name("RenderBuffer");
 }
@@ -202,6 +195,9 @@ Void SRaytraceManager::update(Camera &camera, Float32 deltaTime)
 		frameCount++;
 		areRaysRegenerated = false;
 		firstFrame = false;
+		frameLimitReached = false;
+	} else {
+		frameLimitReached = true;
 	}
 
 	render();
@@ -227,24 +223,24 @@ Void SRaytraceManager::resize_images(const UVector2& size)
 
 	DescriptorResourceInfo accumulationResource;
 	VkDescriptorImageInfo& accumulationInfo = accumulationResource.imageInfos.emplace_back();
-	const Image& accumulationImage = renderManager.get_image_by_handle(accumulationTexture.image);
-	accumulationInfo.imageLayout  = accumulationImage.get_current_layout();
-	accumulationInfo.imageView	  = accumulationImage.get_view();
-	accumulationInfo.sampler      = accumulationImage.get_sampler();
+	const Image& accumulation = renderManager.get_image_by_handle(accumulationTexture.image);
+	accumulationInfo.imageLayout  = accumulation.get_current_layout();
+	accumulationInfo.imageView	  = accumulation.get_view();
+	accumulationInfo.sampler      = accumulation.get_sampler();
 
-	const Handle<DescriptorSetData> accumulationHandle = raytracePool.get_set_data_handle_by_name("AccumulationTexture");
-	raytracePool.update_set(renderManager.get_logical_device(), accumulationResource, accumulationHandle, 0, 0);
+	raytracePool.update_set(renderManager.get_logical_device(), accumulationResource, accumulationImage, 0, 0);
+
+	postprocessPool.update_set(renderManager.get_logical_device(), accumulationResource, fragmentImage, 0, 0);
 
 
 	DescriptorResourceInfo directionResource;
 	VkDescriptorImageInfo& directionInfo = directionResource.imageInfos.emplace_back();
-	const Image& directionImage = renderManager.get_image_by_handle(directionTexture.image);
-	directionInfo.imageLayout = directionImage.get_current_layout();
-	directionInfo.imageView	  = directionImage.get_view();
-	directionInfo.sampler     = directionImage.get_sampler();
+	const Image& direction = renderManager.get_image_by_handle(directionTexture.image);
+	directionInfo.imageLayout = direction.get_current_layout();
+	directionInfo.imageView	  = direction.get_view();
+	directionInfo.sampler     = direction.get_sampler();
 
-	const Handle<DescriptorSetData> directionHandle = raytracePool.get_set_data_handle_by_name("DirectionTexture");
-	raytracePool.update_set(renderManager.get_logical_device(), directionResource, directionHandle, 0, 0);
+	raytracePool.update_set(renderManager.get_logical_device(), directionResource, directionImage, 0, 0);
 }
 
 Void SRaytraceManager::generate_rays(Camera& camera)
@@ -252,7 +248,8 @@ Void SRaytraceManager::generate_rays(Camera& camera)
 	const SDisplayManager& displayManager = SDisplayManager::get();
 	SRenderManager& renderManager = SRenderManager::get();
 	const LogicalDevice& logicalDevice = renderManager.get_logical_device();
-	const CommandBuffer& commandBuffer = renderManager.get_command_buffer_by_handle(raytraceBuffer);
+	const PhysicalDevice& physicalDevice = renderManager.get_physical_device();
+	const CommandBuffer& commandBuffer = renderManager.get_command_buffer_by_handle(rayGenerationBuffer);
 	const UVector2 workGroupsCount = glm::ceil(FVector2(directionTexture.size) / FVector2(WORKGROUP_SIZE));
 
 	const Float32 theta = glm::radians(camera.get_fov());
@@ -296,13 +293,23 @@ Void SRaytraceManager::generate_rays(Camera& camera)
 
 	commandBuffer.dispatch({ workGroupsCount, 1 });
 
+	commandBuffer.pipeline_image_barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+										 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+										 0,
+										 VK_ACCESS_SHADER_WRITE_BIT,
+										 VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT,
+										 physicalDevice.get_compute_family_index(),
+										 physicalDevice.get_compute_family_index(),
+										 renderManager.get_image_by_handle(accumulationTexture.image),
+										 VK_IMAGE_LAYOUT_GENERAL);
+
 	commandBuffer.end();
 
 	VkResult result = logicalDevice.submit_compute_queue(DynamicArray<VkSemaphore>(),
 														 DynamicArray<VkPipelineStageFlags>(),
 														 { commandBuffer.get_buffer() },
 														 { rayGenerationFinished },
-														 raytraceInFlight);
+														 VK_NULL_HANDLE);
 
 	if (result != VK_SUCCESS)
 	{
@@ -315,11 +322,15 @@ Void SRaytraceManager::ray_trace(Camera& camera)
 	SResourceManager& resourceManager = SResourceManager::get();
 	SRenderManager& renderManager = SRenderManager::get();
 	const LogicalDevice& logicalDevice = renderManager.get_logical_device();
+	const PhysicalDevice& physicalDevice = renderManager.get_physical_device();
 	const CommandBuffer& commandBuffer = renderManager.get_command_buffer_by_handle(raytraceBuffer);
 	const UVector2 workGroupsCount = glm::ceil(FVector2(directionTexture.size) / FVector2(WORKGROUP_SIZE));
 
-	logicalDevice.wait_for_fence(raytraceInFlight, true);
-	logicalDevice.reset_fence(raytraceInFlight);
+	if (!areRaysRegenerated)
+	{
+		logicalDevice.wait_for_fence(raytraceInFlight, true);
+		logicalDevice.reset_fence(raytraceInFlight);
+	}
 	commandBuffer.reset(0);
 
 	commandBuffer.begin();
@@ -358,6 +369,17 @@ Void SRaytraceManager::ray_trace(Camera& camera)
 
 	commandBuffer.dispatch({ workGroupsCount, 1 });
 
+
+	commandBuffer.pipeline_image_barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+										 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+										 0,
+										 VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT,
+										 VK_ACCESS_SHADER_READ_BIT,
+										 physicalDevice.get_compute_family_index(),
+										 physicalDevice.get_graphics_family_index(),
+										 renderManager.get_image_by_handle(accumulationTexture.image),
+										 VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL);
+
 	commandBuffer.end();
 	VkResult result;
 	if (areRaysRegenerated)
@@ -366,13 +388,13 @@ Void SRaytraceManager::ray_trace(Camera& camera)
 													VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 													commandBuffer.get_buffer(),
 													raytraceFinished,
-													raytraceInFlight);
+													VK_NULL_HANDLE);
 	} else {
 		result = logicalDevice.submit_compute_queue(DynamicArray<VkSemaphore>(),
 													DynamicArray<VkPipelineStageFlags>(),
 													{ commandBuffer.get_buffer() },
 													{ raytraceFinished },
-													raytraceInFlight);
+													VK_NULL_HANDLE);
 	}
 
 	if (result != VK_SUCCESS)
@@ -386,12 +408,15 @@ Void SRaytraceManager::render()
 	SRenderManager& renderManager = SRenderManager::get();
 
 	const LogicalDevice& logicalDevice = renderManager.get_logical_device();
+	const PhysicalDevice& physicalDevice = renderManager.get_physical_device();
 	const CommandBuffer& commandBuffer = renderManager.get_command_buffer_by_handle(renderBuffer);
 	Swapchain& swapchain = renderManager.get_swapchain();
 	const UVector2& extent = swapchain.get_extent();
-
-	logicalDevice.wait_for_fence(renderInFlight, true);
-	logicalDevice.reset_fence(renderInFlight);
+	if (frameLimitReached)
+	{
+		logicalDevice.wait_for_fence(raytraceInFlight, true);
+		logicalDevice.reset_fence(raytraceInFlight);
+	}
 
 	VkResult result = logicalDevice.acquire_next_image(swapchain, imageAvailable);
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
@@ -418,12 +443,11 @@ Void SRaytraceManager::render()
 	commandBuffer.set_scissor(0, { 0, 0 }, extent);
 
 
-	const DescriptorSetData& accumulation = raytracePool.get_set_data_by_handle(accumulationImage);
+	const DescriptorSetData& accumulation = postprocessPool.get_set_data_by_handle(fragmentImage);
 	commandBuffer.bind_descriptor_set(postprocessPipeline, accumulation.set, 3);
 	
 	PostprocessConstants constants{};
-	constants.invFrameCount = 1.0f / Float32(frameCount - 1);
-	constants.imageSize		= accumulationTexture.size;
+	constants.invFrameCount = 1.0f / Float32(frameCount);
 
 	commandBuffer.set_constants(postprocessPipeline,
 								VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -432,28 +456,46 @@ Void SRaytraceManager::render()
 								&constants);
 
 	const VkBuffer positionsBuffer = renderManager.get_buffer_by_handle(quadPositions).get_buffer();
+	const VkBuffer normalsBuffer   = renderManager.get_buffer_by_handle(quadNormals).get_buffer();
 	const VkBuffer uvsBuffer	   = renderManager.get_buffer_by_handle(quadUvs).get_buffer();
 	const VkBuffer indexBuffer	   = renderManager.get_buffer_by_handle(quadIndexes).get_buffer();
 
-	const Array<VkBuffer, 3> vertexBuffers = { positionsBuffer, uvsBuffer, VK_NULL_HANDLE };
+	const Array<VkBuffer, 3> vertexBuffers = { positionsBuffer, normalsBuffer, uvsBuffer };
 	const Array<VkDeviceSize, 3> offsets = { 0, 0, 0 };
 	commandBuffer.bind_vertex_buffers(0, vertexBuffers, offsets);
 	commandBuffer.bind_index_buffer(indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
 	commandBuffer.draw_indexed(6, 1, 0, 0, 0);
 
-	//IMGUI
-	//ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer.get_buffer());
 
 	commandBuffer.end_render_pass();
+
+	commandBuffer.pipeline_image_barrier(VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+										 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+										 0,
+										 VK_ACCESS_SHADER_READ_BIT,
+										 VK_ACCESS_SHADER_WRITE_BIT,
+										 physicalDevice.get_graphics_family_index(),
+										 physicalDevice.get_compute_family_index(),
+										 renderManager.get_image_by_handle(accumulationTexture.image),
+										 VK_IMAGE_LAYOUT_GENERAL);
 	commandBuffer.end();
 
+	if (frameLimitReached)
+	{
+		result = logicalDevice.submit_graphics_queue(imageAvailable,
+													 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+													 commandBuffer.get_buffer(),
+													 renderFinished,
+													 raytraceInFlight);
+	} else {
+		result = logicalDevice.submit_graphics_queue({ raytraceFinished, imageAvailable },
+													 { VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT },
+													 { commandBuffer.get_buffer() },
+													 { renderFinished },
+													 raytraceInFlight);
+	}
 
-	result = logicalDevice.submit_graphics_queue({ raytraceFinished, imageAvailable },
-												 { VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT },
-												 { commandBuffer.get_buffer() },
-												 { renderFinished },
-												 renderInFlight);
 	if (result != VK_SUCCESS)
 	{
 		SPDLOG_ERROR("Submit draw commands failed with: {}", magic_enum::enum_name(result));
@@ -567,7 +609,7 @@ Void SRaytraceManager::create_descriptors()
 							 0,
 							 0,
 							 VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-							 UInt32(vertexes.size()),
+							 1,
 							 VK_SHADER_STAGE_COMPUTE_BIT,
 							 VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
 							 VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
@@ -577,7 +619,7 @@ Void SRaytraceManager::create_descriptors()
 							 0,
 							 1,
 							 VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-							 UInt32(indexes.size()),
+							 1,
 							 VK_SHADER_STAGE_COMPUTE_BIT,
 							 VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
 							 VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
@@ -587,7 +629,7 @@ Void SRaytraceManager::create_descriptors()
 							 0,
 							 2,
 							 VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-							 UInt32(materials.size()),
+							 1,
 							 VK_SHADER_STAGE_COMPUTE_BIT,
 							 VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
 							 VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
@@ -597,7 +639,7 @@ Void SRaytraceManager::create_descriptors()
 							 0,
 							 3,
 							 VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-							 UInt32(bvh.hierarchy.size()),
+							 1,
 							 VK_SHADER_STAGE_COMPUTE_BIT,
 							 VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
 							 VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
@@ -607,7 +649,7 @@ Void SRaytraceManager::create_descriptors()
 							 0,
 							 4,
 							 VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-							 UInt32(emissionTriangles.size()),
+							 1,
 							 VK_SHADER_STAGE_COMPUTE_BIT,
 							 VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
 							 VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
@@ -625,7 +667,7 @@ Void SRaytraceManager::create_descriptors()
 	postprocessPool.add_binding("AccumulationLayout",
 								3,
 								0,
-								VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+								VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 								1,
 								VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
 								VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
@@ -643,7 +685,6 @@ Void SRaytraceManager::create_descriptors()
 
 Void SRaytraceManager::setup_descriptors()
 {
-	// SResourceManager& resourceManager = SResourceManager::get();
 	SRenderManager& renderManager = SRenderManager::get();
 
 	const Handle<DescriptorLayoutData> sceneLayout = raytracePool.get_layout_data_handle_by_name("SceneDataLayout");
@@ -664,35 +705,19 @@ Void SRaytraceManager::setup_descriptors()
 	materialsInfo.offset = 0;
 	materialsInfo.range  = sizeof(materials[0]) * materials.size();
 
+	VkDescriptorBufferInfo& bvhInfo = sceneResources.emplace_back().bufferInfos.emplace_back();
+	bvhInfo.buffer = renderManager.get_buffer_by_handle(bvhHandle).get_buffer();
+	bvhInfo.offset = 0;
+	bvhInfo.range = sizeof(bvh.hierarchy[0]) * bvh.hierarchy.size();
+
 	VkDescriptorBufferInfo& emissionTrianglesInfo = sceneResources.emplace_back().bufferInfos.emplace_back();
 	emissionTrianglesInfo.buffer = renderManager.get_buffer_by_handle(emissionTrianglesHandle).get_buffer();
 	emissionTrianglesInfo.offset = 0;
 	emissionTrianglesInfo.range  = sizeof(emissionTriangles[0]) * emissionTriangles.size();
 
-	VkDescriptorBufferInfo& bvhInfo = sceneResources.emplace_back().bufferInfos.emplace_back();
-	bvhInfo.buffer = renderManager.get_buffer_by_handle(bvhHandle).get_buffer();
-	bvhInfo.offset = 0;
-	bvhInfo.range  = sizeof(bvh.hierarchy[0]) * bvh.hierarchy.size();
-
 	sceneData = raytracePool.add_set(sceneLayout, sceneResources, "SceneData");
 
 
-	// DynamicArray<DescriptorResourceInfo> textureResources;
-	// DynamicArray<VkDescriptorImageInfo>& imageInfos = textureResources.emplace_back().imageInfos;
-	// const DynamicArray<Texture>& textures = resourceManager.get_textures();
-	// imageInfos.reserve(textures.size());
-	// for (const Texture& texture : textures)
-	// {
-	// 	Image& image = renderManager.get_image_by_handle(texture.image);
-	// 	VkDescriptorImageInfo& imageInfo = imageInfos.emplace_back();
-	// 	imageInfo.imageLayout = image.get_current_layout();
-	// 	imageInfo.imageView	  = image.get_view();
-	// 	imageInfo.sampler	  = image.get_sampler();
-	// }
-	//
-	// this->bindlessTextures = raytracePool.add_set(raytracePool.get_layout_data_handle_by_name("TexturesDataLayout"), 
-	// 										textureResources, 
-	// 										"Textures");
 	bindlessTextures = renderManager.get_pool().get_set_data_handle_by_name("Textures");
 
 
@@ -717,8 +742,20 @@ Void SRaytraceManager::setup_descriptors()
 
 	directionImage = raytracePool.add_set(directionLayout, directionResources, "DirectionTexture");
 
-
 	raytracePool.create_sets(renderManager.get_logical_device(), nullptr);
+
+
+
+	const Handle<DescriptorLayoutData> fragmentLayout = postprocessPool.get_layout_data_handle_by_name("AccumulationLayout");
+	DynamicArray<DescriptorResourceInfo> fragmentResources;
+	VkDescriptorImageInfo& fragmentInfo = fragmentResources.emplace_back().imageInfos.emplace_back();
+	fragmentInfo.imageLayout = accumulation.get_current_layout();
+	fragmentInfo.imageView	 = accumulation.get_view();
+	fragmentInfo.sampler	 = accumulation.get_sampler();
+
+	fragmentImage = postprocessPool.add_set(fragmentLayout, fragmentResources, "AccumulationTexture");
+
+	postprocessPool.create_sets(renderManager.get_logical_device(), nullptr);
 }
 
 Void SRaytraceManager::create_quad_buffers()
@@ -732,22 +769,31 @@ Void SRaytraceManager::create_quad_buffers()
 		FVector3(-1.0f,  1.0f, 1.0f),
 	};
 
+	const DynamicArray<FVector3> normals =
+	{
+		FVector3(0.0f, 0.0f, 1.0f),
+		FVector3(0.0f, 0.0f, 1.0f),
+		FVector3(0.0f, 0.0f, 1.0f),
+		FVector3(0.0f, 0.0f, 1.0f),
+	};
+
 	const DynamicArray<FVector2> uvs =
 	{
-		FVector2(1.0f, 0.0f),
-		FVector2(0.0f, 0.0f),
 		FVector2(1.0f, 1.0f),
 		FVector2(0.0f, 1.0f),
+		FVector2(1.0f, 0.0f),
+		FVector2(0.0f, 0.0f),
 	};
 
 	const DynamicArray<UInt32> indexes =
 	{
 		0, 1, 2, //Top left triangle
-		1, 2, 3, //Bottom right triangle
+		2, 1, 3, //Bottom right triangle
 	};
 
     quadIndexes	  = renderManager.create_static_buffer(indexes, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
     quadPositions = renderManager.create_static_buffer(positions, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+	quadNormals   = renderManager.create_static_buffer(normals, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     quadUvs		  = renderManager.create_static_buffer(uvs, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 }
 
@@ -812,6 +858,7 @@ Void SRaytraceManager::shutdown()
 	vkDestroySemaphore(logicalDevice.get_device(), renderFinished, nullptr);
 	vkDestroySemaphore(logicalDevice.get_device(), imageAvailable, nullptr);
 	vkDestroySemaphore(logicalDevice.get_device(), rayGenerationFinished, nullptr);
+	vkDestroySemaphore(logicalDevice.get_device(), raytraceFinished, nullptr);
 	vkDestroyFence(logicalDevice.get_device(), renderInFlight, nullptr);
 	vkDestroyFence(logicalDevice.get_device(), raytraceInFlight, nullptr);
 }

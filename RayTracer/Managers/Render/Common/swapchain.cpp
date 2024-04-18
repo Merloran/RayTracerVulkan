@@ -114,8 +114,8 @@ Void Swapchain::create_image_views(const LogicalDevice& logicalDevice, const VkA
 VkSurfaceFormatKHR Swapchain::choose_swap_surface_format(const DynamicArray<VkSurfaceFormatKHR>& availableFormats)
 {
     for (const VkSurfaceFormatKHR& availableFormat : availableFormats)
-    { //TODO: change it to RGBA instead of BGRA
-        if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
+    { //TODO: Make this as parameter to change
+        if (availableFormat.format == VK_FORMAT_R8G8B8A8_UNORM &&
             availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
         {
             return availableFormat;

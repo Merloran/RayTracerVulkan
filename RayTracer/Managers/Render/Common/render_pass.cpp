@@ -158,13 +158,13 @@ Void RenderPass::create_framebuffers(const LogicalDevice& logicalDevice, const S
         views[0] = swapchainViews[i];
 
         VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = renderPass;
+        framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass      = renderPass;
         framebufferInfo.attachmentCount = UInt32(views.size());
-        framebufferInfo.pAttachments = views.data();
-        framebufferInfo.width = extent.x;
-        framebufferInfo.height = extent.y;
-        framebufferInfo.layers = 1;
+        framebufferInfo.pAttachments    = views.data();
+        framebufferInfo.width           = extent.x;
+        framebufferInfo.height          = extent.y;
+        framebufferInfo.layers          = 1;
 
         const VkResult result = vkCreateFramebuffer(logicalDevice.get_device(), &framebufferInfo, allocator, &framebuffers[i]);
         if (result != VK_SUCCESS)

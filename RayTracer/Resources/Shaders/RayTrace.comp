@@ -63,27 +63,27 @@ struct Vertex
 	int materialId;
 };
 
-layout(std430, binding = 0) readonly buffer Vertexes
+layout(std430, set = 0, binding = 0) readonly buffer Vertexes
 {
     Vertex vertexes[];
 };
 
-layout(std430, binding = 1) readonly buffer Indexes
+layout(std430, set = 0, binding = 1) readonly buffer Indexes
 {
     uint indexes[];
 };
 
-layout(std430, binding = 2) readonly buffer Materials
+layout(std430, set = 0, binding = 2) readonly buffer Materials
 {
     Material materials[];
 };
 
-layout(std430, binding = 3) readonly buffer Nodes
+layout(std430, set = 0, binding = 3) readonly buffer Nodes
 {
     BVHNode nodes[];
 };
 
-layout(std430, binding = 4) readonly buffer EmissionTriangles
+layout(std430, set = 0, binding = 4) readonly buffer EmissionTriangles
 {
     uint emissionTriangles[];
 };
@@ -189,7 +189,6 @@ void main()
             break;
 		}
 		
-		
 		Material material  = materials[info.materialId];
 		vec3 emission 	   = get_color_from_texture(material.emission, info.uv).rgb;
 		
@@ -206,8 +205,9 @@ void main()
 													  textureNormal);
 		float metalness = get_color_from_texture(material.metalness, info.uv).b;
 		float indexOfRefraction = material.indexOfRefraction;
-		
 		//float roughness = get_color_from_texture(material.roughness, info.uv).g;
+		
+		
 		if (indexOfRefraction != 0.0f)
 		{
 			color *= calculate_dielectric_material(ray, info, normal, albedo, indexOfRefraction);
@@ -219,13 +219,8 @@ void main()
 		} else {
 			color *= calculate_lambertian_material(ray, info, normal, albedo);
 		}
-		
     }
 	
-	//if (any(isnan(color)) || any(isinf(color)))
-	//{
-	//	color = vec3(0.0f);
-	//}
     vec3 currentPixel = imageLoad(accumulated, gid).rgb;
 	vec4 result = vec4(currentPixel + color, 1.0f);
     imageStore(accumulated, gid, result);
@@ -574,7 +569,6 @@ bool hit(in Ray ray, out HitInfo info)
 			continue;
 		}
 		
-		
 		if (nodes[nodeId].primitiveId != -1)
 		{ // Node is leaf node and contains triangle
 			if (triangle_intersect(nodes[nodeId].primitiveId, ray, tempInfo) && tempInfo.distance < info.distance)
@@ -596,13 +590,22 @@ vec3 calculate_surface_normal(int triangleId, vec3 faceNormal, vec3 textureNorma
 	
 	vec3 deltaPos1 = triangle.points[1] - triangle.points[0];
 	vec3 deltaPos2 = triangle.points[2] - triangle.points[0];
-	vec2 deltaUV1 = triangle.uvs[1] - triangle.uvs[0];
-	vec2 deltaUV2 = triangle.uvs[2] - triangle.uvs[0];
+	vec2 deltaUV1  = triangle.uvs[1] - triangle.uvs[0];
+	vec2 deltaUV2  = triangle.uvs[2] - triangle.uvs[0];
 	
-	float r = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x);
+	float denominator = deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x;
+	float r;
+	if (abs(denominator) <= EPSILON)
+	{
+		r = 1.0f / EPSILON;
+	} else {
+		r = 1.0f / denominator;
+	}
+	
 	vec3 tangent   = (deltaPos1 * deltaUV2.y - deltaPos2 * deltaUV1.y) * r;
 	vec3 bitangent = (deltaPos2 * deltaUV1.x - deltaPos1 * deltaUV2.x) * r;
-	vec3 normalFromTexture = textureNormal * 2.0f - 1.0f;
+	
+	vec3 textureInNormalSpace = normalize(textureNormal * 2.0f - 1.0f);
 
 	if (all(equal(textureNormal, vec3(0.0f))))
 	{
@@ -610,7 +613,7 @@ vec3 calculate_surface_normal(int triangleId, vec3 faceNormal, vec3 textureNorma
 	}
 	
 	mat3 TBN = mat3(normalize(tangent), normalize(bitangent), faceNormal);
-	vec3 normalInWorldSpace = normalize(TBN * normalFromTexture);
+	vec3 normalInWorldSpace = normalize(TBN * textureInNormalSpace);
 	
 	return normalInWorldSpace;
 }
@@ -653,11 +656,10 @@ float get_triangle_pdf(int triangleId, vec3 origin, vec3 direction)
 	ray.direction = direction;
 	if (!triangle_intersect(triangleId, ray, info))
 	{
-		return EPSILON; 
+		return 0.0f; 
 	}
 	
 	float cosine = abs(dot(direction, info.normal));
-
 	return (info.distance * info.distance) / (cosine * get_triangle_area(triangleId));
 }
 
@@ -682,16 +684,17 @@ float get_lights_pdf(vec3 origin, vec3 direction)
 	float weight = 1.0f / float(constants.emissionTrianglesCount);
 	float sum = 0.0f;
 	
-	for (int triangleId = 0; triangleId < constants.emissionTrianglesCount; ++triangleId)
+	for (int emissionId = 0; emissionId < constants.emissionTrianglesCount; ++emissionId)
 	{
+		int triangleId = int(emissionTriangles[emissionId]);
 		sum += weight * get_triangle_pdf(triangleId, origin, direction);
 	}
-	return sum;
+	return sum + EPSILON;
 }
 
 vec3 get_light_path(vec3 origin)
 {
-	int triangleId = int(rand() * float(constants.emissionTrianglesCount - 1));
+	int triangleId = int(emissionTriangles[int(rand() * float(constants.emissionTrianglesCount - 1))]);
 	
 	return get_random_in_triangle(triangleId) - origin;
 }

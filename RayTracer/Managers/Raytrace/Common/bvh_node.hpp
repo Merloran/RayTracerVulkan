@@ -2,8 +2,8 @@
 
 struct BVHNode
 {
-	alignas(16) FVector3 min;
-	alignas(16) FVector3 max;
+	alignas(16) FVector3 min; 
+	alignas(16) FVector3 max; 
 	Int32 leftId;
 	Int32 rightId;
 	Int32 parentId;

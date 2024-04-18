@@ -5,7 +5,6 @@
 #include "../Render/Common/descriptor_pool.hpp"
 #include "../Render/Common/pipeline.hpp"
 #include "../Render/Common/render_pass.hpp"
-#include "../Render/Common/swapchain.hpp"
 #include "Common/bvh_builder.hpp"
 
 
@@ -17,31 +16,35 @@ struct GPUMaterial
 	Int32 normal;
 	Int32 roughness;
 	Int32 metalness;
+
 	Int32 emission;
-	Float32 indexOfRefraction;
+	Float32 indexOfRefraction; 
 };
 
 struct RayGenerationConstants
 {
-	alignas(16) FVector3 cameraPosition;
-	alignas(16) FVector3 originPixel;
-	alignas(16) FVector3 pixelDeltaU;
-	alignas(16) FVector3 pixelDeltaV;
+	FVector3 cameraPosition; alignas(16) 
+	FVector3 originPixel; alignas(16) 
+	FVector3 pixelDeltaU; alignas(16) 
+	FVector3 pixelDeltaV; alignas(16) 
 	IVector2 imageSize;
 };
 
 struct RaytraceConstants
 {
-	alignas(16) FVector3 backgroundColor;
-	alignas(16) FVector3 cameraPosition;
-	alignas(16) FVector3 pixelDeltaU;
-	alignas(16) FVector3 pixelDeltaV;
+	FVector3 backgroundColor; alignas(16)
+	FVector3 cameraPosition; alignas(16)
+	FVector3 pixelDeltaU; alignas(16)
+	FVector3 pixelDeltaV; alignas(16)
+
 	FVector2 viewBounds;
 	IVector2 imageSize;
+
 	Float32  time;
 	Int32	 frameCount;
 	Int32	 maxBouncesCount;
 	Int32	 trianglesCount;
+
 	Int32	 emissionTrianglesCount;
 	Int32	 rootId;
 	Int32	 environmentMapId;
@@ -49,7 +52,6 @@ struct RaytraceConstants
 
 struct PostprocessConstants
 {
-	IVector2 imageSize;
 	Float32 invFrameCount;
 };
 
@@ -78,8 +80,6 @@ public:
 	Void shutdown();
 
 	Int32 maxBouncesCount;
-	Int32 frameLimit;
-
 private:
 	SRaytraceManager() = default;
 	~SRaytraceManager() = default;
@@ -88,12 +88,12 @@ private:
 	Pipeline rayGenerationPipeline, raytracePipeline, postprocessPipeline;
 	RenderPass postprocessPass;
 
-	Handle<Buffer> quadIndexes, quadPositions, quadUvs;
+	Handle<Buffer> quadIndexes, quadPositions, quadNormals, quadUvs;
 	Handle<VkCommandPool> raytraceCommandPool;
-	Handle<CommandBuffer> raytraceBuffer, renderBuffer;
+	Handle<CommandBuffer> rayGenerationBuffer, raytraceBuffer, renderBuffer;
 	Handle<Shader> rayGeneration, raytrace, screenV, screenF;
 	Handle<Buffer> vertexesHandle, indexesHandle, materialsHandle, bvhHandle, emissionTrianglesHandle;
-	Handle<DescriptorSetData> sceneData, accumulationImage, directionImage, bindlessTextures;
+	Handle<DescriptorSetData> sceneData, accumulationImage, directionImage, bindlessTextures, fragmentImage;
 	BVHBuilder bvh;
 	Texture accumulationTexture, directionTexture;
 
@@ -105,10 +105,11 @@ private:
 	FVector3 originPixel, pixelDeltaU, pixelDeltaV, backgroundColor;
 	Float32 renderTime;
 	Int32 frameCount, trianglesCount;
+	Int32 frameLimit;
 	Bool shouldRefresh;
 	VkFence raytraceInFlight, renderInFlight;
 	VkSemaphore imageAvailable, renderFinished, rayGenerationFinished, raytraceFinished;
-	Bool firstFrame, areRaysRegenerated;
+	Bool firstFrame, areRaysRegenerated, frameLimitReached;
 
 	Void resize_images(const UVector2& size);
 	Void generate_rays(Camera& camera);

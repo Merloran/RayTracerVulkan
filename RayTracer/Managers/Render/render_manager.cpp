@@ -8,6 +8,7 @@
 #include "../Resource/Common/texture.hpp"
 #include "../Resource/Common/mesh.hpp"
 #include "../Resource/Common/model.hpp"
+#include "../Raytrace/raytrace_manager.hpp"
 #include "Camera/camera.hpp"
 #include "Common/command_buffer.hpp"
 #include "Common/shader.hpp"
@@ -257,7 +258,11 @@ Void SRenderManager::generate_texture_images(DynamicArray<Texture>& textures)
 Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
 {
     Buffer stagingBuffer{};
-    const UInt64 textureSize = UInt64(texture.size.x * texture.size.y * texture.channels);
+    UInt64 textureSize = UInt64(texture.size.x * texture.size.y * texture.channels);
+    if (texture.type == ETextureType::HDR)
+    {
+        textureSize *= sizeof(Float32);
+    }
     stagingBuffer.create(physicalDevice,
                          logicalDevice,
                          textureSize,
@@ -277,6 +282,12 @@ Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
         stagingBuffer.clear(logicalDevice, nullptr);
         return;
     }
+    VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+    if (texture.type == ETextureType::HDR)
+    {
+        format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    }
+
 
     texture.image.id = Int32(images.size());
     Image& textureImage = images.emplace_back();
@@ -286,7 +297,7 @@ Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
                         texture.size,
                         mipLevels,
                         VK_SAMPLE_COUNT_1_BIT,
-                        VK_FORMAT_R8G8B8A8_SRGB,
+                        format,
                         VK_IMAGE_TILING_OPTIMAL,
                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -299,8 +310,15 @@ Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
                             VK_PIPELINE_STAGE_TRANSFER_BIT,
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     copy_buffer_to_image(stagingBuffer, textureImage);
-    
-    generate_mipmaps(textureImage);
+    if (texture.type != ETextureType::HDR)
+    {
+        generate_mipmaps(textureImage); // implicit transition to read optimal
+    } else {
+        transition_image_layout(textureImage,
+                                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
 
     stagingBuffer.clear(logicalDevice, nullptr);
 }
@@ -397,7 +415,8 @@ Void SRenderManager::render_imgui(Bool& isRaytracing)
     ImGui::Begin("Config");                       
 
     ImGui::Text("This is some useful text.");
-    
+
+    ImGui::SliderInt("Max bounces", &SRaytraceManager::get().maxBouncesCount, 0, 32);
 
     if (ImGui::Button("Reload Shaders"))
     {
@@ -661,7 +680,7 @@ Void SRenderManager::create_graphics_descriptors()
                                2,
                                0,
                                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                               resourceManager.get_textures().size(),
+                               UInt32(resourceManager.get_textures().size()),
                                VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT,
                                VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
                                VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
@@ -805,7 +824,7 @@ Void SRenderManager::generate_mipmaps(Image& image)
 	const UVector2 &size = image.get_size();
     Int32 mipWidth  = size.x;
     Int32 mipHeight = size.y;
-    const UInt32 mipLevels = UInt32(image.get_mip_levels());
+    const UInt32 mipLevels = image.get_mip_level();
 
     for (UInt32 i = 1; i < mipLevels; ++i)
     {
@@ -944,7 +963,7 @@ Void SRenderManager::transition_image_layout(Image& image, VkPipelineStageFlags 
     barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
     barrier.image                           = image.get_image();
     barrier.subresourceRange.baseMipLevel   = 0;
-    barrier.subresourceRange.levelCount     = UInt32(image.get_mip_levels());
+    barrier.subresourceRange.levelCount     = image.get_mip_level();
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount     = 1;
     if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) 
@@ -967,7 +986,7 @@ Void SRenderManager::transition_image_layout(Image& image, VkPipelineStageFlags 
 	    }
         case VK_IMAGE_LAYOUT_GENERAL:
         {
-            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;// | VK_ACCESS_SHADER_READ_BIT; //TODO: think of it
+            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT; //TODO: think of it
             break;
         }
 		case VK_IMAGE_LAYOUT_PREINITIALIZED:

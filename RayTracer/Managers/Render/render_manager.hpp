@@ -149,11 +149,11 @@ public:
 		Buffer& buffer = buffers.emplace_back();
 
 		buffer.create(physicalDevice,
-						   logicalDevice,
-						   bufferSize,
-						   VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
-						   properties,
-						   nullptr);
+					  logicalDevice,
+					  bufferSize,
+					  VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
+					  properties,
+					  nullptr);
 
 		copy_buffer(stagingBuffer, buffer);
 
