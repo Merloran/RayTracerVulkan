@@ -89,6 +89,11 @@ public:
 								VkImageLayout		 newLayout,
 								Void*				 next = nullptr) const;
 
+	Void pipeline_image_barrier(Image& image, 
+								VkPipelineStageFlags sourceStage, 
+								VkPipelineStageFlags destinationStage,
+								VkImageLayout newLayout) const;
+
 	Void end_render_pass() const;
 
 	Void end() const;

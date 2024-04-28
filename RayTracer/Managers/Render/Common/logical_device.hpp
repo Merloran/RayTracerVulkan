@@ -23,6 +23,8 @@ public:
     VkResult reset_fences(DynamicArray<VkFence> fences) const;
     VkResult reset_fence(VkFence fence) const;
 
+    VkResult get_fence_status(VkFence fence) const;
+
     VkResult submit_graphics_queue(const DynamicArray<VkSubmitInfo> &infos, VkFence fence) const;
     VkResult submit_graphics_queue(const DynamicArray<VkSemaphore> &waitSemaphores, 
                                    const DynamicArray<VkPipelineStageFlags> &waitStages, 

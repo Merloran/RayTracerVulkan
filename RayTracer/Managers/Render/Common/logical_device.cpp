@@ -1,9 +1,11 @@
 #include "logical_device.hpp"
 
+#include <magic_enum.hpp>
+
 #include "physical_device.hpp"
 #include "debug_messenger.hpp"
 #include "swapchain.hpp"
-
+//TODO: make it more flexible
 Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMessenger& debugMessenger, const VkAllocationCallbacks* allocator)
 {
     const DynamicArray<const Char*>& validationLayers = debugMessenger.get_validation_layers();
@@ -11,18 +13,19 @@ Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMess
     Set<UInt32> uniqueQueueFamilies = 
     {
     	physicalDevice.get_graphics_family_index(),
+    	physicalDevice.get_compute_family_index(),
     	physicalDevice.get_present_family_index()
     };
-
-    const Float32 queuePriority = 1.0f;
+    
+    Array<Float32, 2> priorities = { 1.0f, 1.0f };
     for (const UInt32 queueFamily : uniqueQueueFamilies)
     {
         //QUEUE CREATE INFO
         VkDeviceQueueCreateInfo queueCreateInfo{};
         queueCreateInfo.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queueCreateInfo.queueFamilyIndex = queueFamily;
-        queueCreateInfo.queueCount       = 1;
-        queueCreateInfo.pQueuePriorities = &queuePriority;
+        queueCreateInfo.queueCount       = UInt32(priorities.size());
+        queueCreateInfo.pQueuePriorities = priorities.data();
         queueCreateInfos.push_back(queueCreateInfo);
     }
 
@@ -63,7 +66,7 @@ Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMess
     createInfo.sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.queueCreateInfoCount    = UInt32(queueCreateInfos.size());
     createInfo.pQueueCreateInfos       = queueCreateInfos.data();
-    createInfo.pEnabledFeatures        = nullptr; // Device features 2 is used for this in pNext
+    createInfo.pEnabledFeatures        = VK_NULL_HANDLE; // Device features 2 is used for this in pNext
     createInfo.pNext                   = &deviceFeatures;
     createInfo.enabledExtensionCount   = UInt32(deviceExtensions.size());
     createInfo.ppEnabledExtensionNames = deviceExtensions.data();
@@ -82,7 +85,7 @@ Void LogicalDevice::create(const PhysicalDevice& physicalDevice, const DebugMess
     
     vkGetDeviceQueue(device, physicalDevice.get_present_family_index(), 0, &presentQueue);
     vkGetDeviceQueue(device, physicalDevice.get_graphics_family_index(), 0, &graphicsQueue);
-    vkGetDeviceQueue(device, physicalDevice.get_compute_family_index(), 0, &computeQueue);
+    vkGetDeviceQueue(device, physicalDevice.get_compute_family_index(), 1, &computeQueue);
 }
 
 VkResult LogicalDevice::acquire_next_image(Swapchain& swapchain, VkSemaphore semaphore, VkFence fence, UInt64 timeout) const
@@ -95,6 +98,10 @@ VkResult LogicalDevice::acquire_next_image(Swapchain& swapchain, VkSemaphore sem
                                                   fence,
                                                   &imageIndex);
     swapchain.set_image_index(imageIndex);
+	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+    {
+        SPDLOG_ERROR("Acquire image failed with: {}", magic_enum::enum_name(result));
+    }
     return result;
 }
 
@@ -122,9 +129,19 @@ VkResult LogicalDevice::reset_fence(VkFence fence) const
     return vkResetFences(device, 1, &fence);
 }
 
+VkResult LogicalDevice::get_fence_status(VkFence fence) const
+{
+    return vkGetFenceStatus(device, fence);
+}
+
 VkResult LogicalDevice::submit_graphics_queue(const DynamicArray<VkSubmitInfo>& infos, VkFence fence) const
 {
-    return vkQueueSubmit(graphicsQueue, UInt32(infos.size()), infos.data(), fence);
+    VkResult result = vkQueueSubmit(graphicsQueue, UInt32(infos.size()), infos.data(), fence);
+    if (result != VK_SUCCESS)
+    {
+        SPDLOG_ERROR("Submit graphics queue failed with: {}", magic_enum::enum_name(result));
+    }
+    return result;
 }
 
 VkResult LogicalDevice::submit_graphics_queue(const DynamicArray<VkSemaphore>& waitSemaphores, const DynamicArray<VkPipelineStageFlags>& waitStages, const DynamicArray<VkCommandBuffer>& commandBuffers, const DynamicArray<VkSemaphore>& signalSemaphores, VkFence fence, Void* next) const
@@ -140,7 +157,12 @@ VkResult LogicalDevice::submit_graphics_queue(const DynamicArray<VkSemaphore>& w
     info.signalSemaphoreCount = UInt32(signalSemaphores.size());
     info.pSignalSemaphores    = signalSemaphores.data();
 
-    return vkQueueSubmit(graphicsQueue, 1, &info, fence);
+    VkResult result = vkQueueSubmit(graphicsQueue, 1, &info, fence);
+    if (result != VK_SUCCESS)
+    {
+        SPDLOG_ERROR("Submit graphics queue failed with: {}", magic_enum::enum_name(result));
+    }
+    return result;
 }
 
 VkResult LogicalDevice::submit_graphics_queue(VkSemaphore waitSemaphore, VkPipelineStageFlags waitStage, VkCommandBuffer commandBuffer, VkSemaphore signalSemaphore, VkFence fence, Void* next) const
@@ -148,20 +170,30 @@ VkResult LogicalDevice::submit_graphics_queue(VkSemaphore waitSemaphore, VkPipel
     VkSubmitInfo info;
     info.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     info.pNext                = next;
-    info.waitSemaphoreCount   = 1;
+    info.waitSemaphoreCount   = waitSemaphore ? 1 : 0;
     info.pWaitSemaphores      = &waitSemaphore;
     info.pWaitDstStageMask    = &waitStage;
-    info.commandBufferCount   = 1;
+    info.commandBufferCount   = commandBuffer ? 1 : 0;
     info.pCommandBuffers      = &commandBuffer;
-    info.signalSemaphoreCount = 1;
+    info.signalSemaphoreCount = signalSemaphore ? 1 : 0;
     info.pSignalSemaphores    = &signalSemaphore;
 
-    return vkQueueSubmit(graphicsQueue, 1, &info, fence);
+    VkResult result = vkQueueSubmit(graphicsQueue, 1, &info, fence);
+    if (result != VK_SUCCESS)
+    {
+        SPDLOG_ERROR("Submit graphics queue failed with: {}", magic_enum::enum_name(result));
+    }
+    return result;
 }
 
 VkResult LogicalDevice::submit_compute_queue(const DynamicArray<VkSubmitInfo>& infos, VkFence fence) const
 {
-    return vkQueueSubmit(computeQueue, UInt32(infos.size()), infos.data(), fence);
+    VkResult result = vkQueueSubmit(computeQueue, UInt32(infos.size()), infos.data(), fence);
+    if (result != VK_SUCCESS)
+    {
+        SPDLOG_ERROR("Submit compute queue failed with: {}", magic_enum::enum_name(result));
+    }
+    return result;
 }
 
 VkResult LogicalDevice::submit_compute_queue(const DynamicArray<VkSemaphore>& waitSemaphores, const DynamicArray<VkPipelineStageFlags>& waitStages, const DynamicArray<VkCommandBuffer>& commandBuffers, const DynamicArray<VkSemaphore>& signalSemaphores, VkFence fence, Void* next) const
@@ -176,24 +208,34 @@ VkResult LogicalDevice::submit_compute_queue(const DynamicArray<VkSemaphore>& wa
     info.pCommandBuffers      = commandBuffers.data();
     info.signalSemaphoreCount = UInt32(signalSemaphores.size());
     info.pSignalSemaphores    = signalSemaphores.data();
-
-    return vkQueueSubmit(computeQueue, 1, &info, fence);
+    
+    VkResult result = vkQueueSubmit(computeQueue, 1, &info, fence);
+    if (result != VK_SUCCESS)
+    {
+        SPDLOG_ERROR("Submit compute queue failed with: {}", magic_enum::enum_name(result));
+    }
+    return result;
 }
 
 VkResult LogicalDevice::submit_compute_queue(VkSemaphore waitSemaphore, VkPipelineStageFlags waitStage, VkCommandBuffer commandBuffer, VkSemaphore signalSemaphore, VkFence fence, Void* next) const
 {
-    VkSubmitInfo info;
+    VkSubmitInfo info{};
     info.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     info.pNext                = next;
-    info.waitSemaphoreCount   = 1;
+    info.waitSemaphoreCount   = waitSemaphore ? 1 : 0;
     info.pWaitSemaphores      = &waitSemaphore;
     info.pWaitDstStageMask    = &waitStage;
-    info.commandBufferCount   = 1;
+    info.commandBufferCount   = commandBuffer ? 1 : 0;
     info.pCommandBuffers      = &commandBuffer;
-    info.signalSemaphoreCount = 1;
+    info.signalSemaphoreCount = signalSemaphore ? 1 : 0;
     info.pSignalSemaphores    = &signalSemaphore;
-
-    return vkQueueSubmit(computeQueue, 1, &info, fence);
+    
+    VkResult result = vkQueueSubmit(computeQueue, 1, &info, fence);
+    if (result != VK_SUCCESS)
+    {
+        SPDLOG_ERROR("Submit compute queue failed with: {}", magic_enum::enum_name(result));
+    }
+    return result;
 }
 
 VkResult LogicalDevice::submit_present_queue(const DynamicArray<VkSemaphore>& waitSemaphores, const DynamicArray<Swapchain>& swapchains, VkResult* results, Void* next) const
@@ -208,47 +250,62 @@ VkResult LogicalDevice::submit_present_queue(const DynamicArray<VkSemaphore>& wa
         imageIndexes.push_back(swapchain.get_image_index());
     }
 
-    VkPresentInfoKHR presentInfo;
-    presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.pNext              = next;
-    presentInfo.waitSemaphoreCount = UInt32(waitSemaphores.size());
-    presentInfo.pWaitSemaphores    = waitSemaphores.data();
-    presentInfo.swapchainCount     = UInt32(swapchains.size());
-    presentInfo.pSwapchains        = vkSwapchains.data();
-    presentInfo.pImageIndices      = imageIndexes.data();
-    presentInfo.pResults           = results;
+    VkPresentInfoKHR info{};
+    info.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    info.pNext              = next;
+    info.waitSemaphoreCount = UInt32(waitSemaphores.size());
+    info.pWaitSemaphores    = waitSemaphores.data();
+    info.swapchainCount     = UInt32(swapchains.size());
+    info.pSwapchains        = vkSwapchains.data();
+    info.pImageIndices      = imageIndexes.data();
+    info.pResults           = results;
 
-    return vkQueuePresentKHR(presentQueue, &presentInfo);
+    VkResult result = vkQueuePresentKHR(presentQueue, &info);
+    if (result != VK_SUCCESS && result != VK_ERROR_OUT_OF_DATE_KHR && result != VK_SUBOPTIMAL_KHR)
+    {
+        SPDLOG_ERROR("Submit present queue failed with: {}", magic_enum::enum_name(result));
+    }
+    return result;
 }
 
 VkResult LogicalDevice::submit_present_queue(const DynamicArray<VkSemaphore>& waitSemaphores, const Swapchain& swapchain, VkResult* result, Void* next) const
 {
-    VkPresentInfoKHR presentInfo;
-    presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.pNext              = next;
-    presentInfo.waitSemaphoreCount = UInt32(waitSemaphores.size());
-    presentInfo.pWaitSemaphores    = waitSemaphores.data();
-    presentInfo.swapchainCount     = 1;
-    presentInfo.pSwapchains        = &swapchain.get_swapchain();
-    presentInfo.pImageIndices      = &swapchain.get_image_index();
-    presentInfo.pResults           = result;
+    VkPresentInfoKHR info{};
+    info.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    info.pNext              = next;
+    info.waitSemaphoreCount = UInt32(waitSemaphores.size());
+    info.pWaitSemaphores    = waitSemaphores.data();
+    info.swapchainCount     = 1;
+    info.pSwapchains        = &swapchain.get_swapchain();
+    info.pImageIndices      = &swapchain.get_image_index();
+    info.pResults           = result;
 
-    return vkQueuePresentKHR(presentQueue, &presentInfo);
+    VkResult presentResult = vkQueuePresentKHR(presentQueue, &info);
+    if (presentResult != VK_SUCCESS && presentResult != VK_ERROR_OUT_OF_DATE_KHR && presentResult != VK_SUBOPTIMAL_KHR)
+    {
+        SPDLOG_ERROR("Submit present queue failed with: {}", magic_enum::enum_name(presentResult));
+    }
+    return presentResult;
 }
 
 VkResult LogicalDevice::submit_present_queue(VkSemaphore waitSemaphore, const Swapchain& swapchain, VkResult* result, Void* next) const
 {
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.pNext              = next;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores    = &waitSemaphore;
-    presentInfo.swapchainCount     = 1;
-    presentInfo.pSwapchains        = &swapchain.get_swapchain();
-    presentInfo.pImageIndices      = &swapchain.get_image_index();
-    presentInfo.pResults           = result;
+    VkPresentInfoKHR info{};
+    info.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    info.pNext              = next;
+    info.waitSemaphoreCount = 1;
+    info.pWaitSemaphores    = &waitSemaphore;
+    info.swapchainCount     = 1;
+    info.pSwapchains        = &swapchain.get_swapchain();
+    info.pImageIndices      = &swapchain.get_image_index();
+    info.pResults           = result;
 
-    return vkQueuePresentKHR(presentQueue, &presentInfo);
+    VkResult presentResult = vkQueuePresentKHR(presentQueue, &info);
+    if (presentResult != VK_SUCCESS && presentResult != VK_ERROR_OUT_OF_DATE_KHR && presentResult != VK_SUBOPTIMAL_KHR)
+    {
+        SPDLOG_ERROR("Submit present queue failed with: {}", magic_enum::enum_name(presentResult));
+    }
+    return presentResult;
 }
 
 VkResult LogicalDevice::wait_idle() const

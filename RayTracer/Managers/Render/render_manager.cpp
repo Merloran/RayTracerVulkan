@@ -40,24 +40,22 @@ Void SRenderManager::startup()
     create_surface();
     physicalDevice.select_physical_device(instance, surface);
     logicalDevice.create(physicalDevice, debugMessenger, nullptr);
-
-    for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        create_dynamic_buffer<UniformBufferObject>(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-    }
+    
+    create_dynamic_buffer<UniformBufferObject>(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    
     create_graphics_descriptors();
     graphicsPool = create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
     create_command_buffers(get_command_pool_by_handle(graphicsPool),
                            VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                           { "Graphics1", "Graphics2" });
+                           { "Graphics" });
     create_synchronization_objects();
 
     //Shaders should be created after logical device
     Handle<Shader> vert = load_shader(SHADERS_PATH + "Shader.vert", EShaderType::Vertex);
     Handle<Shader> frag = load_shader(SHADERS_PATH + "Shader.frag", EShaderType::Fragment);
     DynamicArray<Shader> shaders;
-    shaders.emplace_back(get_shader_by_handle(vert));
-    shaders.emplace_back(get_shader_by_handle(frag));
+    shaders.push_back(get_shader_by_handle(vert));
+    shaders.push_back(get_shader_by_handle(frag));
     swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
     renderPass.create(physicalDevice, logicalDevice, swapchain, nullptr, physicalDevice.get_max_samples());
 
@@ -72,15 +70,29 @@ Void SRenderManager::setup_imgui()
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 
+
+    imguiPool = create_command_pool(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    create_command_buffers(get_command_pool_by_handle(imguiPool),
+                           VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                           { "ImGui" });
+
+    Handle<Shader> vert = load_shader(SHADERS_PATH + "Shader.vert", EShaderType::Vertex);
+    Handle<Shader> frag = load_shader(SHADERS_PATH + "Shader.frag", EShaderType::Fragment);
+    DynamicArray<Shader> shaders;
+    shaders.push_back(get_shader_by_handle(vert));
+    shaders.push_back(get_shader_by_handle(frag));
+    imguiPass.create(physicalDevice, logicalDevice, swapchain, nullptr, VK_SAMPLE_COUNT_1_BIT, true, VK_ATTACHMENT_LOAD_OP_DONT_CARE);
+    imguiPipeline.create_graphics_pipeline(descriptorPool, imguiPass, shaders, logicalDevice, nullptr);
+
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
     //ImGui::StyleColorsLight();
 
-    Array<VkDescriptorPoolSize, 1> poolSizes =
+    const Array<VkDescriptorPoolSize, 1> poolSizes =
     {
         {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}},
     };
-    VkDescriptorPoolCreateInfo poolInfo = {};
+    VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     poolInfo.maxSets       = 1;
@@ -97,15 +109,15 @@ Void SRenderManager::setup_imgui()
     initInfo.Device          = logicalDevice.get_device();
     initInfo.QueueFamily     = physicalDevice.get_graphics_family_index();
     initInfo.Queue           = logicalDevice.get_graphics_queue();
-    initInfo.PipelineCache   = graphicsPipeline.get_cache();
+    initInfo.PipelineCache   = imguiPipeline.get_cache();
     initInfo.DescriptorPool  = imguiDescriptorPool;
     initInfo.Subpass         = 0;
     initInfo.MinImageCount   = capabilities.minImageCount;
     initInfo.ImageCount      = capabilities.minImageCount + 1;
-    initInfo.MSAASamples     = renderPass.get_samples();
+    initInfo.MSAASamples     = imguiPass.get_samples();
     initInfo.Allocator       = nullptr;
     initInfo.CheckVkResultFn = s_check_vk_result;
-    ImGui_ImplVulkan_Init(&initInfo, renderPass.get_render_pass());
+    ImGui_ImplVulkan_Init(&initInfo, imguiPass.get_render_pass());
 }
 
 const Handle<Shader>& SRenderManager::get_shader_handle_by_name(const String& name) const
@@ -220,7 +232,7 @@ Handle<Shader> SRenderManager::load_shader(const String& filePath, const EShader
     auto iterator = nameToIdShaders.find(shader.get_name());
     if (iterator != nameToIdShaders.end())
     {
-        SPDLOG_ERROR("Shader {} already exists.", shader.get_name());
+        SPDLOG_WARN("Shader {} already exists.", shader.get_name());
         shader.clear(logicalDevice, nullptr);
         return iterator->second;
     }
@@ -352,18 +364,15 @@ Void SRenderManager::resize_image(const UVector2& newSize, Handle<Image> image)
 
 Void SRenderManager::setup_graphics_descriptors(const DynamicArray<Texture>& textures)
 {
-    for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        DynamicArray<DescriptorResourceInfo> resources;
-        VkDescriptorBufferInfo& uniformBufferInfo = resources.emplace_back().bufferInfos.emplace_back();
-        uniformBufferInfo.buffer = uniformBuffers[i].get_buffer();
-        uniformBufferInfo.offset = 0;
-        uniformBufferInfo.range  = sizeof(UniformBufferObject);
+    DynamicArray<DescriptorResourceInfo> uniformResources;
+    VkDescriptorBufferInfo& uniformBufferInfo = uniformResources.emplace_back().bufferInfos.emplace_back();
+    uniformBufferInfo.buffer = dynamicBuffers[0].get_buffer();
+    uniformBufferInfo.offset = 0;
+    uniformBufferInfo.range  = sizeof(UniformBufferObject);
 
-        descriptorPool.add_set(descriptorPool.get_layout_data_handle_by_name("CameraDataLayout" + std::to_string(i)),
-                               resources,
-							   "GraphicsDescriptorSet" + std::to_string(i));
-    }
+    descriptorPool.add_set(descriptorPool.get_layout_data_handle_by_name("CameraDataLayout"),
+                           uniformResources,
+						   "GraphicsDescriptorSet");
 
     DynamicArray<DescriptorResourceInfo> resources;
     DynamicArray<VkDescriptorImageInfo>& imageInfos = resources.emplace_back().imageInfos;
@@ -404,26 +413,28 @@ Void SRenderManager::reload_shaders()
     graphicsPipeline.recreate_pipeline(descriptorPool, renderPass, shaders, logicalDevice, nullptr);
 }
 
-Void SRenderManager::render_imgui(Bool& isRaytracing)
+Void SRenderManager::update_imgui()
 {
+    SRaytraceManager& raytraceManager = SRaytraceManager::get();
     // Start the Dear ImGui frame
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-    
 
-    ImGui::Begin("Config");                       
+
+    ImGui::Begin("Config");
 
     ImGui::Text("This is some useful text.");
 
-    ImGui::SliderInt("Max bounces", &SRaytraceManager::get().maxBouncesCount, 0, 32);
+    ImGui::DragInt("Frame limit", &raytraceManager.frameLimit);
+    ImGui::SliderInt("Max bounces", &raytraceManager.maxBouncesCount, 0, 32);
 
     if (ImGui::Button("Reload Shaders"))
     {
         reload_shaders();
     }
 
-	ImGui::Checkbox("Raytrace enabled", &isRaytracing);
+    ImGui::Checkbox("Raytrace enabled", &raytraceManager.isEnabled);
 
     ImGuiIO& io = ImGui::GetIO(); (Void)io;
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
@@ -432,21 +443,70 @@ Void SRenderManager::render_imgui(Bool& isRaytracing)
     ImGui::Render();
 }
 
+Void SRenderManager::render_imgui()
+{
+    SRaytraceManager& raytraceManager = SRaytraceManager::get();
+
+    CommandBuffer commandBuffer = get_command_buffer_by_name("ImGui");
+    commandBuffer.reset(0);
+    
+    const UVector2& extent = swapchain.get_extent();
+
+    commandBuffer.begin();
+    commandBuffer.begin_render_pass(imguiPass, swapchain, swapchain.get_image_index(), VK_SUBPASS_CONTENTS_INLINE);
+    commandBuffer.bind_pipeline(imguiPipeline);
+
+    commandBuffer.set_viewport(0, { 0.0f, 0.0f }, extent, { 0.0f, 1.0f });
+    commandBuffer.set_scissor(0, { 0, 0 }, extent);
+
+    //IMGUI
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer.get_buffer());
+
+    commandBuffer.end_render_pass();
+    commandBuffer.end();
+
+    if (raytraceManager.isEnabled)
+    {
+        logicalDevice.submit_graphics_queue(raytraceManager.renderFinished,
+                                            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                            commandBuffer.get_buffer(),
+                                            imguiFinished,
+                                            imguiInFlight);
+
+        VkResult result = logicalDevice.submit_present_queue({ imguiFinished }, swapchain);
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || SDisplayManager::get().was_resize_handled())
+        {
+            recreate_swapchain(swapchain, renderPass);
+            return;
+        }
+    } else {
+        logicalDevice.submit_graphics_queue(renderFinished,
+                                            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                            commandBuffer.get_buffer(),
+                                            imguiFinished,
+                                            imguiInFlight);
+
+        VkResult result = logicalDevice.submit_present_queue({ imguiFinished, imageAvailable }, swapchain);
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || SDisplayManager::get().was_resize_handled())
+        {
+            recreate_swapchain(swapchain, renderPass);
+            return;
+        }
+    }
+
+    logicalDevice.wait_for_fence(imguiInFlight, true);
+    logicalDevice.reset_fence(imguiInFlight);
+}
+
 Void SRenderManager::render(Camera& camera, const DynamicArray<Model>& models, Float32 time)
 {
-    UInt64 currentFrame = isFrameEven ? 1 : 0;
-
-    logicalDevice.wait_for_fence(inFlightFences[currentFrame], true);
-    VkResult result = logicalDevice.acquire_next_image(swapchain, imageAvailableSemaphores[currentFrame]);
-
+    CommandBuffer commandBuffer = get_command_buffer_by_name("Graphics");
+    SResourceManager& resourceManager = SResourceManager::get();
+    const UVector2& extent = swapchain.get_extent();
+    VkResult result = logicalDevice.acquire_next_image(swapchain, imageAvailable);
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
         recreate_swapchain(swapchain, renderPass);
-        return;
-    }
-    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-    {
-        SPDLOG_ERROR("Acquire image failed with: {}", magic_enum::enum_name(result));
         return;
     }
 
@@ -457,39 +517,78 @@ Void SRenderManager::render(Camera& camera, const DynamicArray<Model>& models, F
         FMatrix4 proj = camera.get_projection(SDisplayManager::get().get_aspect_ratio());
         proj[1][1] *= -1.0f; // Invert Y axis
         ubo.viewProjection = proj * view;
-        update_dynamic_buffer(ubo, uniformBuffers[currentFrame]);
+        update_dynamic_buffer(ubo, dynamicBuffers[0]);
     }
 
-    logicalDevice.reset_fence(inFlightFences[currentFrame]);
-
-    CommandBuffer currentBuffer = get_command_buffer_by_name("Graphics" + std::to_string(currentFrame + 1));
-    currentBuffer.reset(0);
-    record_commands(currentBuffer, models);
+    commandBuffer.reset(0);
+    commandBuffer.begin();
+    commandBuffer.begin_render_pass(renderPass, swapchain, swapchain.get_image_index(), VK_SUBPASS_CONTENTS_INLINE);
+    commandBuffer.bind_pipeline(graphicsPipeline);
     
-    result = logicalDevice.submit_graphics_queue(imageAvailableSemaphores[currentFrame],
-												 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                                 currentBuffer.get_buffer(),
-                                                 renderFinishedSemaphores[currentFrame],
-                                                 inFlightFences[currentFrame]);
-    if (result != VK_SUCCESS)
+    commandBuffer.set_viewport(0, { 0.0f, 0.0f }, extent, { 0.0f, 1.0f });
+    commandBuffer.set_scissor(0, { 0, 0 }, extent);
+
+    const DescriptorSetData& uniformSet = descriptorPool.get_set_data_by_name("GraphicsDescriptorSet");
+    commandBuffer.bind_descriptor_set(graphicsPipeline, uniformSet.set, uniformSet.setNumber);
+
+    const DescriptorSetData& textureSet = descriptorPool.get_set_data_by_name("Textures");
+    commandBuffer.bind_descriptor_set(graphicsPipeline, textureSet.set, textureSet.setNumber);
+
+    for (const Model& model : models)
     {
-        SPDLOG_ERROR("Submit graphics queue failed with: {}", magic_enum::enum_name(result));
-        return;
+        for (UInt64 i = 0; i < model.meshes.size(); ++i)
+        {
+            const Mesh& mesh = resourceManager.get_mesh_by_handle(model.meshes[i]);
+            const Material& material = resourceManager.get_material_by_handle(model.materials[i]);
+
+            const VkBuffer positionsBuffer = get_buffer_by_handle(mesh.positionsHandle).get_buffer();
+            const VkBuffer normalsBuffer = get_buffer_by_handle(mesh.normalsHandle).get_buffer();
+            const VkBuffer uvsBuffer = get_buffer_by_handle(mesh.uvsHandle).get_buffer();
+            const VkBuffer indexBuffer = get_buffer_by_handle(mesh.indexesHandle).get_buffer();
+
+            Array<VkBuffer, 3> vertexBuffers = { positionsBuffer, normalsBuffer, uvsBuffer };
+            Array<VkDeviceSize, 3> offsets = { 0, 0, 0 };
+            commandBuffer.bind_vertex_buffers(0, vertexBuffers, offsets);
+            commandBuffer.bind_index_buffer(indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+            VertexConstants vertexConstants{};
+            vertexConstants.model = FMatrix4(1.0f);
+            FragmentConstants fragmentConstants{};
+            fragmentConstants.albedoId = material.textures[UInt64(ETextureType::Albedo)].id;
+            
+            commandBuffer.set_constants(graphicsPipeline, 
+                                        VK_SHADER_STAGE_VERTEX_BIT, 
+                                        0, 
+                                        sizeof(vertexConstants),
+                                        &vertexConstants);
+
+            commandBuffer.set_constants(graphicsPipeline, 
+                                        VK_SHADER_STAGE_FRAGMENT_BIT, 
+                                        sizeof(vertexConstants),
+                                        sizeof(fragmentConstants),
+                                        &fragmentConstants);
+
+            commandBuffer.draw_indexed(UInt32(mesh.indexes.size()),
+                                       1,
+                                       0,
+                                       0,
+                                       0);
+        }
     }
 
+    commandBuffer.end_render_pass();
+    commandBuffer.end();
 
-    result = logicalDevice.submit_present_queue(renderFinishedSemaphores[currentFrame], swapchain);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || SDisplayManager::get().was_resize_handled())
-    {
-        recreate_swapchain(swapchain, renderPass);
-    }
-    else if (result != VK_SUCCESS)
-    {
-        SPDLOG_ERROR("Present swapchain image failed with: {}", magic_enum::enum_name(result));
-        return;
-    }
+    
+    logicalDevice.submit_graphics_queue(VK_NULL_HANDLE,
+										0,
+                                        commandBuffer.get_buffer(),
+                                        renderFinished,
+                                        inFlightFence);
 
     isFrameEven = !isFrameEven;
+    logicalDevice.wait_for_fence(inFlightFence, true);
+    logicalDevice.reset_fence(inFlightFence);
 }
 
 VkSurfaceKHR SRenderManager::get_surface() const
@@ -665,10 +764,10 @@ Void SRenderManager::recreate_swapchain(Swapchain& swapchain, RenderPass& render
     logicalDevice.wait_idle();
 
     swapchain.clear(logicalDevice, nullptr);
+    swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
+
     renderPass.clear_framebuffers(logicalDevice, nullptr);
     renderPass.clear_images(logicalDevice, nullptr);
-
-    swapchain.create(logicalDevice, physicalDevice, surface, nullptr);
     renderPass.create_attachments(physicalDevice, logicalDevice, swapchain, nullptr);
     renderPass.create_framebuffers(logicalDevice, swapchain, nullptr);
 }
@@ -677,7 +776,7 @@ Void SRenderManager::create_graphics_descriptors()
 {
     SResourceManager& resourceManager = SResourceManager::get();
     descriptorPool.add_binding("TexturesDataLayout",
-                               2,
+                               1,
                                0,
                                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                UInt32(resourceManager.get_textures().size()),
@@ -685,19 +784,17 @@ Void SRenderManager::create_graphics_descriptors()
                                VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
                                VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
                                VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
-
-    for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        descriptorPool.add_binding("CameraDataLayout" + std::to_string(i),
-                                   UInt32(i),
-                                   0,
-                                   VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                                   1,
-                                   VK_SHADER_STAGE_VERTEX_BIT,
-                                   VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
-                                   VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-                                   VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
-    }
+    
+    descriptorPool.add_binding("CameraDataLayout",
+                               0,
+                               0,
+                               VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                               1,
+                               VK_SHADER_STAGE_VERTEX_BIT,
+                               VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+                               VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
+                               VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
+    
 
     descriptorPool.create_layouts(logicalDevice, nullptr);
 
@@ -715,95 +812,21 @@ Void SRenderManager::create_graphics_descriptors()
 
 Void SRenderManager::create_synchronization_objects()
 {
-    imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
-
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
     VkFenceCreateInfo fenceInfo{};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-    for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-    {
-        if (vkCreateSemaphore(logicalDevice.get_device(), &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(logicalDevice.get_device(), &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
-            vkCreateFence(logicalDevice.get_device(), &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS)
-        {
-
-            throw std::runtime_error("failed to create synchronization objects for a frame!");
-        }
-    }
-}
-
-Void SRenderManager::record_commands(const CommandBuffer& commandBuffer, const DynamicArray<Model>& models)
-{
-    SResourceManager& resourceManager = SResourceManager::get();
-    const UInt64 currentFrame = isFrameEven ? 1 : 0;
-    const UVector2& extent = swapchain.get_extent();
-
-    commandBuffer.begin();
-    commandBuffer.begin_render_pass(renderPass, swapchain, swapchain.get_image_index(), VK_SUBPASS_CONTENTS_INLINE);
-    commandBuffer.bind_pipeline(graphicsPipeline);
     
-    commandBuffer.set_viewport(0, { 0.0f, 0.0f }, extent, { 0.0f, 1.0f });
-    commandBuffer.set_scissor(0, { 0, 0 }, extent);
-
-    const VkDescriptorSet uniformSet = descriptorPool.get_set_data_by_name("GraphicsDescriptorSet" + std::to_string(currentFrame)).set;
-    commandBuffer.bind_descriptor_set(graphicsPipeline, uniformSet, 0);
-
-    const VkDescriptorSet textureSet = descriptorPool.get_set_data_by_name("Textures").set;
-    commandBuffer.bind_descriptor_set(graphicsPipeline, textureSet, 2);
-
-    for (const Model& model : models)
+    if (vkCreateSemaphore(logicalDevice.get_device(), &semaphoreInfo, nullptr, &imageAvailable) != VK_SUCCESS ||
+        vkCreateSemaphore(logicalDevice.get_device(), &semaphoreInfo, nullptr, &renderFinished) != VK_SUCCESS ||
+        vkCreateSemaphore(logicalDevice.get_device(), &semaphoreInfo, nullptr, &imguiFinished) != VK_SUCCESS ||
+        vkCreateFence(logicalDevice.get_device(), &fenceInfo, nullptr, &imguiInFlight) != VK_SUCCESS ||
+        vkCreateFence(logicalDevice.get_device(), &fenceInfo, nullptr, &inFlightFence) != VK_SUCCESS)
     {
-        for (UInt64 i = 0; i < model.meshes.size(); ++i)
-        {
-            const Mesh& mesh = resourceManager.get_mesh_by_handle(model.meshes[i]);
-            const Material& material = resourceManager.get_material_by_handle(model.materials[i]);
 
-            const VkBuffer positionsBuffer = get_buffer_by_handle(mesh.positionsHandle).get_buffer();
-            const VkBuffer normalsBuffer = get_buffer_by_handle(mesh.normalsHandle).get_buffer();
-            const VkBuffer uvsBuffer = get_buffer_by_handle(mesh.uvsHandle).get_buffer();
-            const VkBuffer indexBuffer = get_buffer_by_handle(mesh.indexesHandle).get_buffer();
-
-            Array<VkBuffer, 3> vertexBuffers = { positionsBuffer, normalsBuffer, uvsBuffer };
-            Array<VkDeviceSize, 3> offsets = { 0, 0, 0 };
-            commandBuffer.bind_vertex_buffers(0, vertexBuffers, offsets);
-            commandBuffer.bind_index_buffer(indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-            VertexConstants vertexConstants{};
-            vertexConstants.model = FMatrix4(1.0f);
-            FragmentConstants fragmentConstants{};
-            fragmentConstants.albedoId = material.textures[UInt64(ETextureType::Albedo)].id;
-            
-            commandBuffer.set_constants(graphicsPipeline, 
-                                        VK_SHADER_STAGE_VERTEX_BIT, 
-                                        0, 
-                                        sizeof(vertexConstants),
-                                        &vertexConstants);
-
-            commandBuffer.set_constants(graphicsPipeline, 
-                                        VK_SHADER_STAGE_FRAGMENT_BIT, 
-                                        sizeof(vertexConstants),
-                                        sizeof(fragmentConstants),
-                                        &fragmentConstants);
-
-            commandBuffer.draw_indexed(UInt32(mesh.indexes.size()),
-                                       1,
-                                       0,
-                                       0,
-                                       0);
-        }
+        throw std::runtime_error("failed to create synchronization objects for a frame!");
     }
-
-    //IMGUI
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer.get_buffer());
-
-    commandBuffer.end_render_pass();
-    commandBuffer.end();
 }
 
 Void SRenderManager::generate_mipmaps(Image& image)
@@ -951,141 +974,12 @@ Void SRenderManager::copy_buffer_to_image(const Buffer& buffer, Image& image)
 
 Void SRenderManager::transition_image_layout(Image& image, VkPipelineStageFlags sourceStage, VkPipelineStageFlags destinationStage, VkImageLayout newLayout)
 {
-    VkCommandBuffer commandBuffer;
-    begin_quick_commands(commandBuffer);
-
-    const VkImageLayout oldLayout = image.get_current_layout();
-    VkImageMemoryBarrier barrier{};
-    barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout                       = oldLayout;
-    barrier.newLayout                       = newLayout;
-    barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image                           = image.get_image();
-    barrier.subresourceRange.baseMipLevel   = 0;
-    barrier.subresourceRange.levelCount     = image.get_mip_level();
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount     = 1;
-    if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) 
-    {
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        if (has_stencil_component(image.get_format()))
-        {
-            barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-        }
-    } else {
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    }
-
-    switch (oldLayout)
-	{
-		case VK_IMAGE_LAYOUT_UNDEFINED:
-	    {
-		    barrier.srcAccessMask = 0;
-    		break;
-	    }
-        case VK_IMAGE_LAYOUT_GENERAL:
-        {
-            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT; //TODO: think of it
-            break;
-        }
-		case VK_IMAGE_LAYOUT_PREINITIALIZED:
-		{
-			barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-			break;
-		}
-		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-		{
-			barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-			break;
-		}
-		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-		{
-			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-			break;
-		}
-		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-		{
-			barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-			break;
-		}
-		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-		{
-			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			break;
-		}
-		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-		{
-			barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-			break;
-		}
-		default:
-		{
-			SPDLOG_ERROR("Not supported old layout transition: {}", magic_enum::enum_name(oldLayout));
-			end_quick_commands(commandBuffer);
-			return;
-		}
-    }
-
-    // Destination access mask controls the dependency for the new image layout.
-    switch (newLayout)
-	{
-		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-		{
-		    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		    break;
-		}
-	    case VK_IMAGE_LAYOUT_GENERAL:
-		{
-	        barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
-	        break;
-		}
-		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-		{
-		    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-		    break;
-		}
-		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-		{
-		    barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		    break;
-		}
-		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-		{
-		    barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-		    break;
-		}
-		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-		{
-		    if (barrier.srcAccessMask == 0) 
-            {
-			    barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
-		    }
-
-		    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		    break;
-		}
-		default:
-	    {
-		    SPDLOG_ERROR("Not supported new layout transition: {}", magic_enum::enum_name(newLayout));
-    		end_quick_commands(commandBuffer);
-    		return;
-	    }
-    }
-    image.set_current_layout(newLayout);
-
-    vkCmdPipelineBarrier(commandBuffer,
-                         sourceStage,
-                         destinationStage,
-                         0,
-                         0,
-                         nullptr,
-                         0,
-                         nullptr,
-                         1,
-                         &barrier);
-
-    end_quick_commands(commandBuffer);
+    CommandBuffer commandBuffer;
+    VkCommandBuffer buffer;
+    begin_quick_commands(buffer);
+    commandBuffer.set_buffer(buffer);
+    commandBuffer.pipeline_image_barrier(image, sourceStage, destinationStage, newLayout);
+    end_quick_commands(buffer);
 }
 
 Void SRenderManager::copy_buffer(const Buffer& source, Buffer& destination)
@@ -1159,11 +1053,6 @@ Void SRenderManager::end_quick_commands(VkCommandBuffer commandBuffer)
                          1, &commandBuffer);
 }
 
-Bool SRenderManager::has_stencil_component(VkFormat format)
-{
-    return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT || format == VK_FORMAT_D16_UNORM_S8_UINT;
-}
-
 Void SRenderManager::s_check_vk_result(VkResult error)
 {
     if (error != 0)
@@ -1178,6 +1067,11 @@ Void SRenderManager::shutdown_imgui()
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
     vkDestroyDescriptorPool(logicalDevice.get_device(), imguiDescriptorPool, nullptr);
+    vkDestroySemaphore(logicalDevice.get_device(), imguiFinished, nullptr);
+    vkDestroyFence(logicalDevice.get_device(), imguiInFlight, nullptr);
+
+    imguiPass.clear(logicalDevice, nullptr);
+    imguiPipeline.clear(logicalDevice, nullptr);
 }
 
 Void SRenderManager::shutdown()
@@ -1193,7 +1087,7 @@ Void SRenderManager::shutdown()
         image.clear(logicalDevice, nullptr);
     }
 
-    for (Buffer& buffer : uniformBuffers)
+    for (Buffer& buffer : dynamicBuffers)
     {
         buffer.clear(logicalDevice, nullptr);
     }
@@ -1212,13 +1106,10 @@ Void SRenderManager::shutdown()
     graphicsPipeline.clear(logicalDevice, nullptr);
     renderPass.clear(logicalDevice, nullptr);
     swapchain.clear(logicalDevice, nullptr);
-
-    for (UInt64 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-    {
-        vkDestroySemaphore(logicalDevice.get_device(), renderFinishedSemaphores[i], nullptr);
-        vkDestroySemaphore(logicalDevice.get_device(), imageAvailableSemaphores[i], nullptr);
-        vkDestroyFence(logicalDevice.get_device(), inFlightFences[i], nullptr);
-    }
+    
+    vkDestroySemaphore(logicalDevice.get_device(), renderFinished, nullptr);
+    vkDestroySemaphore(logicalDevice.get_device(), imageAvailable, nullptr);
+    vkDestroyFence(logicalDevice.get_device(), inFlightFence, nullptr);
 
     for (Shader& shader : shaders)
     {

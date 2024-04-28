@@ -49,7 +49,6 @@ public:
 	const String SHADERS_PATH = "Resources/Shaders/";
 	const String COMPILED_SHADER_EXTENSION = ".spv";
 	const String GLSL_COMPILER_PATH = "D:/VulkanSDK/Bin/glslc.exe";
-	const UInt64 MAX_FRAMES_IN_FLIGHT = 2;
 	SRenderManager(SRenderManager&) = delete;
 	static SRenderManager& get();
 
@@ -73,8 +72,9 @@ public:
 	Void resize_image(const UVector2& newSize, Handle<Image> image);
 	Void setup_graphics_descriptors(const DynamicArray<Texture>& textures);
 	Void reload_shaders();
-	
-	Void render_imgui(Bool& isRaytracing);
+	Void update_imgui();
+
+	Void render_imgui();
 	Void render(Camera& camera, const DynamicArray<Model>& models, Float32 time);
 
 	[[nodiscard]]
@@ -106,8 +106,8 @@ public:
 																		 | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
 	{
 		const VkDeviceSize bufferSize = sizeof(Type);
-		const Handle<Buffer> handle = { Int32(uniformBuffers.size()) };
-		Buffer& buffer = uniformBuffers.emplace_back();
+		const Handle<Buffer> handle = { Int32(dynamicBuffers.size()) };
+		Buffer& buffer = dynamicBuffers.emplace_back();
 
 		buffer.create(physicalDevice,
 					  logicalDevice,
@@ -181,13 +181,13 @@ private:
 	PhysicalDevice physicalDevice;
 	LogicalDevice logicalDevice;
 	Swapchain swapchain;
-	RenderPass renderPass;
+	RenderPass renderPass, imguiPass;
 	DescriptorPool descriptorPool;
-	Pipeline graphicsPipeline;
+	Pipeline graphicsPipeline, imguiPipeline;
 	DynamicArray<Shader> shaders;
 	HashMap<String, Handle<Shader>> nameToIdShaders;
 	
-	Handle<VkCommandPool> graphicsPool;
+	Handle<VkCommandPool> graphicsPool, imguiPool;
 	Handle<VkCommandPool> quickPool;
 	DynamicArray<VkCommandPool> commandPools;
 
@@ -196,12 +196,14 @@ private:
 	HashMap<String, Handle<CommandBuffer>> nameToIdCommandBuffers;
 
 	DynamicArray<Buffer> buffers; // Contains index and vertex data buffers for meshes
-	DynamicArray<Buffer> uniformBuffers;
+	DynamicArray<Buffer> dynamicBuffers;
 	DynamicArray<Image> images;
 	
-	DynamicArray<VkSemaphore> imageAvailableSemaphores;
-	DynamicArray<VkSemaphore> renderFinishedSemaphores;
-	DynamicArray<VkFence>	  inFlightFences;
+	VkSemaphore imageAvailable;
+	VkSemaphore renderFinished;
+	VkSemaphore imguiFinished;
+	VkFence		imguiInFlight;
+	VkFence		inFlightFence;
 
 	Bool isFrameEven;
 	VkDescriptorPool imguiDescriptorPool;
@@ -212,8 +214,6 @@ private:
 	Void create_surface();
 	Void create_graphics_descriptors();
 	Void create_synchronization_objects();
-	
-	Void record_commands(const CommandBuffer &commandBuffer, const DynamicArray<Model>& models);
 
 	Void generate_mipmaps(Image& image);
 	Void copy_buffer_to_image(const Buffer& buffer, Image& image);
@@ -221,7 +221,6 @@ private:
 	Void create_quick_commands();
 	Void begin_quick_commands(VkCommandBuffer &commandBuffer);
 	Void end_quick_commands(VkCommandBuffer commandBuffer);
-	Bool has_stencil_component(VkFormat format);
 
 	static Void s_check_vk_result(VkResult error);
 };

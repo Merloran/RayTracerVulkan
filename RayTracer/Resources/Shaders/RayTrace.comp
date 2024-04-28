@@ -92,6 +92,7 @@ layout(set = 1, binding = 0) uniform sampler2D textures[];
 
 layout (rgba32f, set = 2, binding = 0) readonly uniform image2D rayDirections;
 layout (rgba32f, set = 3, binding = 0) uniform image2D accumulated;
+layout (rgba32f, set = 4, binding = 0) writeonly uniform image2D screenImage;
 
 layout( push_constant ) uniform PushConstants
 {
@@ -102,6 +103,7 @@ layout( push_constant ) uniform PushConstants
 	vec2  viewBounds;
 	ivec2 imageSize;
 	float time;
+	float invFrameCount;
 	int   frameCount;
 	int   maxBouncesCount;
 	int   trianglesCount;
@@ -224,6 +226,8 @@ void main()
     vec3 currentPixel = imageLoad(accumulated, gid).rgb;
 	vec4 result = vec4(currentPixel + color, 1.0f);
     imageStore(accumulated, gid, result);
+	result *= constants.invFrameCount;
+	imageStore(screenImage, gid, vec4(result.rgb, 1.0f));
 }
 
 vec3 calculate_emission_material(HitInfo info, vec3 emission)

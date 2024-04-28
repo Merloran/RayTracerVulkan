@@ -23,12 +23,12 @@ public:
     Void clear(const LogicalDevice& device, const VkAllocationCallbacks* allocator);
 
 private:
-    VkSwapchainKHR              swapchain;
-    DynamicArray<VkImage>       images;
-    DynamicArray<VkImageView>   imageViews;
-    VkFormat                    imageFormat;
-    UVector2                    extent;
-    UInt32                      imageIndex;
+    VkSwapchainKHR            swapchain;
+    DynamicArray<VkImage>     images;
+    DynamicArray<VkImageView> imageViews;
+    VkFormat                  imageFormat;
+    UVector2                  extent;
+    UInt32                    imageIndex;
 
     Void create_image_views(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 

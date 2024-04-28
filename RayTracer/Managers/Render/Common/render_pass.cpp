@@ -8,7 +8,7 @@
 #include <magic_enum.hpp>
 
 
-Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator, VkSampleCountFlagBits samples, Bool depthTest)
+Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevice& logicalDevice, const Swapchain& swapchain, const VkAllocationCallbacks* allocator, VkSampleCountFlagBits samples, Bool depthTest, VkAttachmentLoadOp loadOperation)
 {
     DynamicArray<VkAttachmentDescription> attachments;
     isDepthTest = depthTest;
@@ -25,7 +25,7 @@ Void RenderPass::create(const PhysicalDevice& physicalDevice, const LogicalDevic
     VkAttachmentDescription colorAttachmentResolve{};
     colorAttachmentResolve.format         = swapchain.get_image_format();
     colorAttachmentResolve.samples        = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachmentResolve.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachmentResolve.loadOp         = loadOperation;
     colorAttachmentResolve.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachmentResolve.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachmentResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;

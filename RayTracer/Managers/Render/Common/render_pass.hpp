@@ -16,7 +16,8 @@ public:
 				const Swapchain& swapchain,
 				const VkAllocationCallbacks* allocator,
 				VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT,
-				Bool depthTest = true);
+				Bool depthTest = true,
+				VkAttachmentLoadOp loadOperation = VK_ATTACHMENT_LOAD_OP_CLEAR);
 
 	Void create_attachments(const PhysicalDevice& physicalDevice,
 							const LogicalDevice& logicalDevice,

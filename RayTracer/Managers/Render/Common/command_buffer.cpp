@@ -2,6 +2,7 @@
 
 #include <magic_enum.hpp>
 
+#include "logical_device.hpp"
 #include "pipeline.hpp"
 #include "render_pass.hpp"
 #include "swapchain.hpp"
@@ -170,21 +171,21 @@ Void CommandBuffer::pipeline_buffer_barrier(VkPipelineStageFlags sourceStage, Vk
 
 Void CommandBuffer::pipeline_image_barrier(VkPipelineStageFlags sourceStage, VkPipelineStageFlags destinationStage, VkDependencyFlags dependencies, VkAccessFlags sourceAccess, VkAccessFlags destinationAccess, UInt32 sourceQueueIndex, UInt32 destinationQueueIndex, Image& image, VkImageLayout newLayout, Void* next) const
 {
-    VkImageMemoryBarrier imageBarrier{};
-    imageBarrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    imageBarrier.pNext                           = next;
-    imageBarrier.srcAccessMask                   = sourceAccess;
-    imageBarrier.dstAccessMask                   = destinationAccess;
-    imageBarrier.oldLayout                       = image.get_current_layout();
-    imageBarrier.newLayout                       = newLayout;
-    imageBarrier.srcQueueFamilyIndex             = sourceQueueIndex;
-    imageBarrier.dstQueueFamilyIndex             = destinationQueueIndex;
-    imageBarrier.image                           = image.get_image();
-    imageBarrier.subresourceRange.aspectMask     = image.get_aspect_flags();
-    imageBarrier.subresourceRange.baseMipLevel   = 0;
-    imageBarrier.subresourceRange.levelCount     = image.get_mip_level();
-    imageBarrier.subresourceRange.baseArrayLayer = 0;
-    imageBarrier.subresourceRange.layerCount     = 1;
+    VkImageMemoryBarrier barrier{};
+    barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.pNext                           = next;
+    barrier.srcAccessMask                   = sourceAccess;
+    barrier.dstAccessMask                   = destinationAccess;
+    barrier.oldLayout                       = image.get_current_layout();
+    barrier.newLayout                       = newLayout;
+    barrier.srcQueueFamilyIndex             = sourceQueueIndex;
+    barrier.dstQueueFamilyIndex             = destinationQueueIndex;
+    barrier.image                           = image.get_image();
+    barrier.subresourceRange.aspectMask     = image.get_aspect_flags();
+    barrier.subresourceRange.baseMipLevel   = 0;
+    barrier.subresourceRange.levelCount     = image.get_mip_level();
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount     = 1;
 
     vkCmdPipelineBarrier(commandBuffer,
                          sourceStage,
@@ -195,9 +196,143 @@ Void CommandBuffer::pipeline_image_barrier(VkPipelineStageFlags sourceStage, VkP
                          0,
                          nullptr,
                          1,
-                         &imageBarrier);
+                         &barrier);
 
     image.set_current_layout(newLayout);
+}
+
+Void CommandBuffer::pipeline_image_barrier(Image& image, VkPipelineStageFlags sourceStage, VkPipelineStageFlags destinationStage, VkImageLayout newLayout) const
+{
+    const VkImageLayout oldLayout = image.get_current_layout();
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.pNext                           = nullptr;
+    barrier.oldLayout                       = oldLayout;
+    barrier.newLayout                       = newLayout;
+    barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image                           = image.get_image();
+    barrier.subresourceRange.baseMipLevel   = 0;
+    barrier.subresourceRange.levelCount     = image.get_mip_level();
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount     = 1;
+    if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) 
+    {
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        VkFormat format = image.get_format();
+        if (format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT || format == VK_FORMAT_D16_UNORM_S8_UINT)
+        {
+            barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        }
+    } else {
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    }
+
+    switch (oldLayout)
+	{
+		case VK_IMAGE_LAYOUT_UNDEFINED:
+	    {
+		    barrier.srcAccessMask = 0;
+    		break;
+	    }
+        case VK_IMAGE_LAYOUT_GENERAL:
+        {
+            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+            break;
+        }
+		case VK_IMAGE_LAYOUT_PREINITIALIZED:
+		{
+			barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+			break;
+		}
+		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+		{
+			barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+			break;
+		}
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+		{
+			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			break;
+		}
+		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+		{
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+			break;
+		}
+		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+		{
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			break;
+		}
+		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		{
+			barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+			break;
+		}
+		default:
+		{
+			SPDLOG_ERROR("Not supported old layout transition: {}", magic_enum::enum_name(oldLayout));
+			return;
+		}
+    }
+    
+    switch (newLayout)
+	{
+		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+		{
+		    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		    break;
+		}
+	    case VK_IMAGE_LAYOUT_GENERAL:
+		{
+	        barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+	        break;
+		}
+		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+		{
+		    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		    break;
+		}
+		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+		{
+		    barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		    break;
+		}
+		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+		{
+		    barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		    break;
+		}
+		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		{
+		    if (barrier.srcAccessMask == 0) 
+            {
+			    barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+		    }
+
+		    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		    break;
+		}
+		default:
+	    {
+		    SPDLOG_ERROR("Not supported new layout transition: {}", magic_enum::enum_name(newLayout));
+    		return;
+	    }
+    }
+    image.set_current_layout(newLayout);
+
+    vkCmdPipelineBarrier(commandBuffer,
+                         sourceStage,
+                         destinationStage,
+                         0,
+                         0,
+                         nullptr,
+                         0,
+                         nullptr,
+                         1,
+                         &barrier);
 }
 
 Void CommandBuffer::end_render_pass() const

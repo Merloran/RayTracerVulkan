@@ -41,18 +41,14 @@ struct RaytraceConstants
 	IVector2 imageSize;
 
 	Float32  time;
+	Float32  invFrameCount;
 	Int32	 frameCount;
 	Int32	 maxBouncesCount;
-	Int32	 trianglesCount;
 
+	Int32	 trianglesCount;
 	Int32	 emissionTrianglesCount;
 	Int32	 rootId;
 	Int32	 environmentMapId;
-};
-
-struct PostprocessConstants
-{
-	Float32 invFrameCount;
 };
 
 struct Vertex;
@@ -79,6 +75,9 @@ public:
 	Void refresh();
 	Void shutdown();
 
+	VkSemaphore imageAvailable, renderFinished, rayGenerationFinished, raytraceFinished;
+	Bool isEnabled;
+	Int32 frameLimit;
 	Int32 maxBouncesCount;
 private:
 	SRaytraceManager() = default;
@@ -93,9 +92,11 @@ private:
 	Handle<CommandBuffer> rayGenerationBuffer, raytraceBuffer, renderBuffer;
 	Handle<Shader> rayGeneration, raytrace, screenV, screenF;
 	Handle<Buffer> vertexesHandle, indexesHandle, materialsHandle, bvhHandle, emissionTrianglesHandle;
-	Handle<DescriptorSetData> sceneData, accumulationImage, directionImage, bindlessTextures, fragmentImage;
+	Handle<DescriptorSetData> sceneData, accumulationImage, directionImage, bindlessTextures;
+	Array<Handle<DescriptorSetData>, 2> fragmentImages, screenImages;
 	BVHBuilder bvh;
-	Texture accumulationTexture, directionTexture;
+	Texture directionTexture, accumulationTexture;
+	Array<Texture, 2> screenTextures;
 
 	DynamicArray<GPUMaterial> materials;
 	DynamicArray<Vertex> vertexes;
@@ -105,11 +106,10 @@ private:
 	FVector3 originPixel, pixelDeltaU, pixelDeltaV, backgroundColor;
 	Float32 renderTime;
 	Int32 frameCount, trianglesCount;
-	Int32 frameLimit;
 	Bool shouldRefresh;
 	VkFence raytraceInFlight, renderInFlight;
-	VkSemaphore imageAvailable, renderFinished, rayGenerationFinished, raytraceFinished;
-	Bool firstFrame, areRaysRegenerated, frameLimitReached;
+	Bool areRaysRegenerated, frameLimitReached;
+	UInt64 currentImageIndex;
 
 	Void resize_images(const UVector2& size);
 	Void generate_rays(Camera& camera);

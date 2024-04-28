@@ -14,9 +14,9 @@ Void DescriptorPool::add_binding(const String& layoutName, UInt32 setNumber, UIn
     }
 
     DescriptorLayoutData &data = layoutData[setNumber];
-
     if (data.name.empty())
     {
+        data.setNumber = setNumber;
         data.name = layoutName;
     }
 
@@ -104,6 +104,7 @@ Handle<DescriptorSetData> DescriptorPool::add_set(Handle<DescriptorLayoutData> l
 
     DescriptorSetData& data = setData.emplace_back();
     data.name         = name;
+    data.setNumber    = layout.setNumber;
     data.layoutHandle = layoutHandle;
     data.writes.resize(layout.bindings.size());
     data.resources = resources;

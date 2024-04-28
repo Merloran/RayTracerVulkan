@@ -7,11 +7,12 @@ class LogicalDevice;
 
 struct DescriptorLayoutData
 {
+	VkDescriptorSetLayout layout;
 	DynamicArray<VkDescriptorSetLayoutBinding> bindings;
 	DynamicArray<VkDescriptorBindingFlags> bindingFlags;
 	VkDescriptorSetLayoutCreateFlags layoutFlags;
+	UInt32 setNumber;
 	String name;
-	VkDescriptorSetLayout layout;
 };
 
 struct DescriptorResourceInfo
@@ -23,11 +24,12 @@ struct DescriptorResourceInfo
 
 struct DescriptorSetData
 {
+	VkDescriptorSet set;
 	DynamicArray<DescriptorResourceInfo> resources; //TODO: think of remove it
 	DynamicArray<VkWriteDescriptorSet> writes;
-	String name;
 	Handle<DescriptorLayoutData> layoutHandle;
-	VkDescriptorSet set;
+	UInt32 setNumber;
+	String name;
 };
 
 class DescriptorPool

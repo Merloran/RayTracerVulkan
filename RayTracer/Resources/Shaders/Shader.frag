@@ -6,7 +6,7 @@ layout (location = 1) in vec3 worldNormal;
 layout (location = 2) in vec2 uvFragment;
 layout (location = 3) in flat float time;
 
-layout(set = 2, binding = 0) uniform sampler2D textures[];
+layout(set = 1, binding = 0) uniform sampler2D textures[];
 
 layout( push_constant ) uniform PushConstants
 {
