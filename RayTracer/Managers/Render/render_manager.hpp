@@ -55,27 +55,11 @@ public:
 	Void startup();
 	Void setup_imgui();
 
-	Handle<Shader> load_shader(const String& filePath, const EShaderType shaderType, const String& functionName = "main");
-	Void generate_mesh_buffers(DynamicArray<Mesh>& meshes);
-	Void create_mesh_buffers(Mesh& mesh);
-	Void generate_texture_images(DynamicArray<Texture>& textures);
-	Void create_texture_image(Texture& texture, UInt32 mipLevels = 1);
-	Handle<Image> create_image(const UVector2& size, 
-							   VkFormat format, 
-							   VkImageUsageFlags usage, 
-							   VkImageTiling tiling,
-							   UInt32 mipLevels = 1);
-	Void transition_image_layout(Image& image,
-								 VkPipelineStageFlags sourceStage,
-								 VkPipelineStageFlags destinationStage,
-								 VkImageLayout newLayout);
-	Void resize_image(const UVector2& newSize, Handle<Image> image);
-	Void setup_graphics_descriptors(const DynamicArray<Texture>& textures);
-	Void reload_shaders();
-	Void update_imgui();
 
+	Void update_imgui();
 	Void render_imgui();
 	Void render(Camera& camera, const DynamicArray<Model>& models, Float32 time);
+
 
 	[[nodiscard]]
 	VkSurfaceKHR get_surface() const;
@@ -96,9 +80,32 @@ public:
 	CommandBuffer& get_command_buffer_by_name(const String& name);
 	CommandBuffer& get_command_buffer_by_handle(const Handle<CommandBuffer> handle);
 
+	[[nodiscard]]
+	const Handle<VkSemaphore>& get_semaphore_handle_by_name(const String& name)  const;
+	VkSemaphore get_semaphore_by_name(const String& name);
+	VkSemaphore get_semaphore_by_handle(const Handle<VkSemaphore> handle);
+
+	[[nodiscard]]
+	const Handle<VkFence>& get_fence_handle_by_name(const String& name)  const;
+	VkFence get_fence_by_name(const String& name);
+	VkFence get_fence_by_handle(const Handle<VkFence> handle);
+
 	Image& get_image_by_handle(const Handle<Image> handle);
 	Buffer& get_buffer_by_handle(const Handle<Buffer> handle);
 	VkCommandPool get_command_pool_by_handle(const Handle<VkCommandPool> handle);
+	RenderPass& get_render_pass_by_handle(const Handle<RenderPass> handle);
+
+
+	Handle<Shader> load_shader(const String& filePath, const EShaderType shaderType, const String& functionName = "main");
+	Void generate_mesh_buffers(DynamicArray<Mesh>& meshes);
+	Void create_mesh_buffers(Mesh& mesh);
+	Void generate_texture_images(DynamicArray<Texture>& textures);
+	Void create_texture_image(Texture& texture, UInt32 mipLevels = 1);
+	Handle<Image> create_image(const UVector2& size,
+							   VkFormat format,
+							   VkImageUsageFlags usage,
+							   VkImageTiling tiling,
+							   UInt32 mipLevels = 1);
 
 	template <typename Type>
 	Handle<Buffer> create_dynamic_buffer(VkBufferUsageFlagBits usage, 
@@ -161,11 +168,27 @@ public:
 
 		return handle;
 	}
+	
+	Handle<RenderPass> create_render_pass(VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT, 
+										  Bool depthTest = true, 
+										  VkAttachmentLoadOp loadOperation = VK_ATTACHMENT_LOAD_OP_CLEAR);
 
 	Handle<VkCommandPool> create_command_pool(VkCommandPoolCreateFlagBits flags);
 	Void create_command_buffers(Handle<VkCommandPool> handle, VkCommandBufferLevel level, const DynamicArray<String>& names);
 	Void create_command_buffers(VkCommandPool pool, VkCommandBufferLevel level, const DynamicArray<String>& names);
-	Void recreate_swapchain(Swapchain &swapchain, RenderPass &renderPass);
+
+	Handle<VkSemaphore> create_semaphore(const String &name);
+	Handle<VkFence> create_fence(const String& name, VkFenceCreateFlags flags = 0);
+
+
+	Void setup_graphics_descriptors(const DynamicArray<Texture>& textures);
+	Void recreate_swapchain();
+	Void reload_shaders();
+	Void resize_image(const UVector2& newSize, Handle<Image> image);
+	Void transition_image_layout(Image& image,
+								 VkPipelineStageFlags sourceStage,
+								 VkPipelineStageFlags destinationStage,
+								 VkImageLayout newLayout);
 
 	Void shutdown_imgui();
 	Void shutdown();
@@ -181,44 +204,48 @@ private:
 	PhysicalDevice physicalDevice;
 	LogicalDevice logicalDevice;
 	Swapchain swapchain;
-	RenderPass renderPass, imguiPass;
+	Handle<RenderPass> rasterizePass, imguiPass;
+	DynamicArray<RenderPass> renderPasses;
+
 	DescriptorPool descriptorPool;
 	Pipeline graphicsPipeline, imguiPipeline;
+
 	DynamicArray<Shader> shaders;
 	HashMap<String, Handle<Shader>> nameToIdShaders;
 	
 	Handle<VkCommandPool> graphicsPool, imguiPool;
-	Handle<VkCommandPool> quickPool;
 	DynamicArray<VkCommandPool> commandPools;
-
-	Handle<CommandBuffer> quickCommandBuffer;
+	
 	DynamicArray<CommandBuffer> commandBuffers;
 	HashMap<String, Handle<CommandBuffer>> nameToIdCommandBuffers;
 
 	DynamicArray<Buffer> buffers; // Contains index and vertex data buffers for meshes
 	DynamicArray<Buffer> dynamicBuffers;
 	DynamicArray<Image> images;
-	
-	VkSemaphore imageAvailable;
-	VkSemaphore renderFinished;
-	VkSemaphore imguiFinished;
-	VkFence		imguiInFlight;
-	VkFence		inFlightFence;
+
+	Handle<VkFence> inFlightFence;
+	Handle<VkFence> imguiInFlight;
+	DynamicArray<VkFence> fences;
+	HashMap<String, Handle<VkFence>> nameToIdFences;
+
+	Handle<VkSemaphore> imageAvailable;
+	Handle<VkSemaphore> renderFinished;
+	Handle<VkSemaphore> imguiFinished;
+	DynamicArray<VkSemaphore> semaphores;
+	HashMap<String, Handle<VkSemaphore>> nameToIdSemaphores;
 
 	Bool isFrameEven;
 	VkDescriptorPool imguiDescriptorPool;
 
 
-	Void create_vulkan_instance();
-	DynamicArray<const Char*> get_required_extensions();
-	Void create_surface();
 	Void create_graphics_descriptors();
-	Void create_synchronization_objects();
+	Void create_vulkan_instance();
+	Void create_surface();
+	DynamicArray<const Char*> get_required_extensions();
 
 	Void generate_mipmaps(Image& image);
 	Void copy_buffer_to_image(const Buffer& buffer, Image& image);
 	Void copy_buffer(const Buffer& source, Buffer& destination);
-	Void create_quick_commands();
 	Void begin_quick_commands(VkCommandBuffer &commandBuffer);
 	Void end_quick_commands(VkCommandBuffer commandBuffer);
 

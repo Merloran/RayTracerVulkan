@@ -30,7 +30,6 @@ Void SRaytraceManager::startup()
 	SResourceManager& resourceManager = SResourceManager::get();
 	SDisplayManager& displayManager = SDisplayManager::get();
 	SRenderManager& renderManager = SRenderManager::get();
-	frameLimitReached = false;
 	areRaysRegenerated = false;
 	isEnabled = false;
 	currentImageIndex = 0;
@@ -43,7 +42,7 @@ Void SRaytraceManager::startup()
 
 	renderTime = 0.0f;
 	maxBouncesCount = 6;
-	frameLimit = 800;
+	frameLimit = 0;
 	frameCount = 0;
 	backgroundColor = { 0.0f, 0.0f, 0.0f };
 
@@ -159,8 +158,14 @@ Void SRaytraceManager::startup()
 											  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 											  VK_IMAGE_LAYOUT_GENERAL);
 	}
+	
 
-	create_synchronization_objects();
+	imageAvailable		  = renderManager.create_semaphore("raytraceImageAvailable");
+	renderFinished		  = renderManager.create_semaphore("raytraceRenderFinished");
+	rayGenerationFinished = renderManager.create_semaphore("rayGenerationFinished");
+	raytraceFinished	  = renderManager.create_semaphore("raytraceFinished");
+	renderInFlight		  = renderManager.create_fence("raytraceRenderInFlight");
+	raytraceInFlight	  = renderManager.create_fence("raytraceInFlight", VK_FENCE_CREATE_SIGNALED_BIT);
 	create_quad_buffers();
 	create_descriptors();
 	create_pipelines();
@@ -189,19 +194,20 @@ Void SRaytraceManager::update(Camera &camera, Float32 deltaTime)
 	{
 		shouldRefresh = false;
 		resize_images(size);
-		// renderManager.recreate_swapchain(renderManager.get_swapchain(), postprocessPass);
+		if (IVector2(renderManager.get_swapchain().get_extent()) != size)
+		{
+			renderManager.recreate_swapchain();
+		}
 	}
 
-	VkResult result = renderManager.get_logical_device().get_fence_status(raytraceInFlight);
-	// VkResult result = renderManager.get_logical_device().get_fence_status(raytraceInFlight);
+	VkResult result = renderManager.get_logical_device().get_fence_status(renderManager.get_fence_by_handle(raytraceInFlight));
 	if (result == VK_NOT_READY)
 	{
-		SPDLOG_INFO("HELLO :D");
+		// SPDLOG_INFO("HELLO :D");
 		render();
 		return;
-	} else {
-		SPDLOG_WARN("NOT HELLO :(");
 	}
+	// SPDLOG_WARN("NOT HELLO :(");
 
 	if (hasWindowResized || hasCameraChanged)
 	{
@@ -218,9 +224,6 @@ Void SRaytraceManager::update(Camera &camera, Float32 deltaTime)
 		frameCount++;
 		currentImageIndex = (currentImageIndex + 1) % screenTextures.size();
 		areRaysRegenerated = false;
-		frameLimitReached = false;
-	} else {
-		frameLimitReached = true;
 	}
 
 	render();
@@ -242,6 +245,15 @@ Void SRaytraceManager::resize_images(const UVector2& size)
 										  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
 										  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 										  VK_IMAGE_LAYOUT_GENERAL);
+
+	for (const Texture& screenTexture : screenTextures)
+	{
+		renderManager.resize_image(size, screenTexture.image);
+		renderManager.transition_image_layout(renderManager.get_image_by_handle(screenTexture.image),
+											  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+											  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+											  VK_IMAGE_LAYOUT_GENERAL);
+	}
 	
 
 	DescriptorResourceInfo accumulationResource;
@@ -296,8 +308,9 @@ Void SRaytraceManager::generate_rays(Camera& camera)
 	pixelDeltaV = viewportV / Float32(directionTexture.size.y);
 	originPixel = camera.get_position() + camera.get_forward() + (pixelDeltaU - viewportU + pixelDeltaV - viewportV) * 0.5f;
 
-	logicalDevice.wait_for_fence(raytraceInFlight, true);
-	logicalDevice.reset_fence(raytraceInFlight);
+	VkFence raytraceFence = renderManager.get_fence_by_handle(raytraceInFlight);
+	logicalDevice.wait_for_fence(raytraceFence, true);
+	logicalDevice.reset_fence(raytraceFence);
 	commandBuffer.reset(0);
 
 	commandBuffer.begin();
@@ -330,11 +343,11 @@ Void SRaytraceManager::generate_rays(Camera& camera)
 										 VK_IMAGE_LAYOUT_GENERAL);
 
 	commandBuffer.end();
-
+	
 	logicalDevice.submit_compute_queue(VK_NULL_HANDLE,
 									   0,
 									   commandBuffer.get_buffer(),
-									   rayGenerationFinished,
+									   renderManager.get_semaphore_by_handle(rayGenerationFinished),
 									   VK_NULL_HANDLE);
 }
 
@@ -346,10 +359,11 @@ Void SRaytraceManager::ray_trace(Camera& camera)
 	const CommandBuffer& commandBuffer = renderManager.get_command_buffer_by_handle(raytraceBuffer);
 	const UVector2 workGroupsCount = glm::ceil(FVector2(directionTexture.size) / FVector2(WORKGROUP_SIZE));
 
+	VkFence raytraceFence = renderManager.get_fence_by_handle(raytraceInFlight);
 	if (!areRaysRegenerated)
 	{
-		logicalDevice.wait_for_fence(raytraceInFlight, true);
-		logicalDevice.reset_fence(raytraceInFlight);
+		logicalDevice.wait_for_fence(raytraceFence, true);
+		logicalDevice.reset_fence(raytraceFence);
 	}
 	commandBuffer.reset(0);
 
@@ -406,17 +420,18 @@ Void SRaytraceManager::ray_trace(Camera& camera)
 	VkResult result;
 	if (areRaysRegenerated)
 	{
-		result = logicalDevice.submit_compute_queue(rayGenerationFinished,
+
+		result = logicalDevice.submit_compute_queue(renderManager.get_semaphore_by_handle(rayGenerationFinished),
 													VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 													commandBuffer.get_buffer(),
 													VK_NULL_HANDLE,
-													raytraceInFlight);
+													raytraceFence);
 	} else {
 		result = logicalDevice.submit_compute_queue(VK_NULL_HANDLE,
 													0,
 													commandBuffer.get_buffer(),
 													VK_NULL_HANDLE,
-													raytraceInFlight);
+													raytraceFence);
 	}
 
 	if (result != VK_SUCCESS)
@@ -433,7 +448,12 @@ Void SRaytraceManager::render()
 	Swapchain& swapchain = renderManager.get_swapchain();
 	const UVector2& extent = swapchain.get_extent();
 
-	VkResult result = logicalDevice.acquire_next_image(swapchain, imageAvailable);
+	const VkFence imguiFence = renderManager.get_fence_by_name("imguiInFlight");
+	logicalDevice.wait_for_fence(imguiFence, true);
+	logicalDevice.reset_fence(imguiFence);
+
+	VkSemaphore imageSemaphore = renderManager.get_semaphore_by_handle(imageAvailable);
+	VkResult result = logicalDevice.acquire_next_image(swapchain, imageSemaphore);
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
         return;
@@ -441,7 +461,10 @@ Void SRaytraceManager::render()
 
 	commandBuffer.reset(0);
 	commandBuffer.begin();
-	commandBuffer.begin_render_pass(postprocessPass, swapchain, swapchain.get_image_index(), VK_SUBPASS_CONTENTS_INLINE);
+	commandBuffer.begin_render_pass(renderManager.get_render_pass_by_handle(postprocessPass), 
+									swapchain, 
+									swapchain.get_image_index(), 
+									VK_SUBPASS_CONTENTS_INLINE);
 	commandBuffer.bind_pipeline(postprocessPipeline);
 
 	commandBuffer.set_viewport(0, { 0.0f, 0.0f }, extent, { 0.0f, 1.0f });
@@ -465,17 +488,15 @@ Void SRaytraceManager::render()
 
 	commandBuffer.end_render_pass();
 	commandBuffer.end();
-	
-	logicalDevice.submit_graphics_queue(imageAvailable,
+
+
+	VkFence renderFence = renderManager.get_fence_by_handle(renderInFlight);
+	VkSemaphore renderSemaphore = renderManager.get_semaphore_by_handle(renderFinished);
+	logicalDevice.submit_graphics_queue(imageSemaphore,
 										VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 										commandBuffer.get_buffer(),
-										renderFinished,
-										renderInFlight);
-
-	SPDLOG_INFO("STEP 0 wait begin");
-	logicalDevice.wait_for_fence(renderInFlight, true);
-	logicalDevice.reset_fence(renderInFlight);
-	SPDLOG_INFO("STEP 1 wait end");
+										renderSemaphore,
+										renderFence);
 }
 
 Void SRaytraceManager::create_pipelines()
@@ -496,15 +517,10 @@ Void SRaytraceManager::create_pipelines()
 	shaders.push_back(renderManager.get_shader_by_handle(screenV));
 	shaders.push_back(renderManager.get_shader_by_handle(screenF));
 	
-	postprocessPass.create(renderManager.get_physical_device(), 
-						   renderManager.get_logical_device(), 
-						   renderManager.get_swapchain(), 
-						   nullptr,
-						   VK_SAMPLE_COUNT_1_BIT,
-						   false);
+	postprocessPass = renderManager.create_render_pass(VK_SAMPLE_COUNT_1_BIT, false);
 	
 	postprocessPipeline.create_graphics_pipeline(postprocessPool, 
-											     postprocessPass, 
+												 renderManager.get_render_pass_by_handle(postprocessPass),
 											     shaders, 
 											     renderManager.get_logical_device(), 
 											     nullptr);
@@ -787,31 +803,6 @@ Void SRaytraceManager::create_quad_buffers()
     quadUvs		  = renderManager.create_static_buffer(uvs, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 }
 
-Void SRaytraceManager::create_synchronization_objects()
-{
-	const SRenderManager& renderManager = SRenderManager::get();
-	const LogicalDevice& logicalDevice = renderManager.get_logical_device();
-	VkSemaphoreCreateInfo semaphoreInfo{};
-	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-	VkFenceCreateInfo fenceInfo{};
-	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-
-	VkFenceCreateInfo signaledInfo{};
-	signaledInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	signaledInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-	
-	if (vkCreateSemaphore(logicalDevice.get_device(), &semaphoreInfo, nullptr, &imageAvailable) != VK_SUCCESS  ||
-		vkCreateSemaphore(logicalDevice.get_device(), &semaphoreInfo, nullptr, &renderFinished) != VK_SUCCESS  ||
-		vkCreateSemaphore(logicalDevice.get_device(), &semaphoreInfo, nullptr, &rayGenerationFinished) != VK_SUCCESS ||
-		vkCreateSemaphore(logicalDevice.get_device(), &semaphoreInfo, nullptr, &raytraceFinished) != VK_SUCCESS ||
-		vkCreateFence(logicalDevice.get_device(), &fenceInfo, nullptr, &renderInFlight) != VK_SUCCESS				||
-		vkCreateFence(logicalDevice.get_device(), &signaledInfo, nullptr, &raytraceInFlight) != VK_SUCCESS)
-	{
-		throw std::runtime_error("failed to create synchronization objects for a frame!");
-	}
-}
-
 Int32 SRaytraceManager::get_frame_count() const
 {
 	return frameCount;
@@ -825,6 +816,52 @@ FVector3 SRaytraceManager::get_background_color() const
 const Texture& SRaytraceManager::get_screen_texture() const
 {
 	return accumulationTexture;
+}
+
+Void SRaytraceManager::reload_shaders()
+{
+	SRenderManager& renderManager = SRenderManager::get();
+	const LogicalDevice& logicalDevice = renderManager.get_logical_device();
+    Bool result = true;
+
+	Shader& generationShader = renderManager.get_shader_by_handle(rayGeneration);
+	Shader& traceShader = renderManager.get_shader_by_handle(raytrace);
+	Shader& fragment = renderManager.get_shader_by_handle(screenF);
+	Shader& vertex = renderManager.get_shader_by_handle(screenV);
+
+    result &= generationShader.recreate(renderManager.GLSL_COMPILER_PATH, logicalDevice, nullptr);
+    result &= traceShader.recreate(renderManager.GLSL_COMPILER_PATH, logicalDevice, nullptr);
+    result &= fragment.recreate(renderManager.GLSL_COMPILER_PATH, logicalDevice, nullptr);
+    result &= vertex.recreate(renderManager.GLSL_COMPILER_PATH, logicalDevice, nullptr);
+
+    if (!result)
+    {
+        SPDLOG_ERROR("Failed to reload shaders.");
+        return;
+    }
+
+    DynamicArray<Shader> shaders;
+    shaders.emplace_back(fragment);
+    shaders.emplace_back(vertex);
+	
+    logicalDevice.wait_idle();
+    postprocessPipeline.recreate_pipeline(postprocessPool,
+										  renderManager.get_render_pass_by_handle(postprocessPass),
+										  shaders,
+										  logicalDevice,
+										  nullptr);
+
+    raytracePipeline.recreate_pipeline(raytracePool,
+								       RenderPass(),
+									   { traceShader },
+								       logicalDevice,
+								       nullptr);
+
+    rayGenerationPipeline.recreate_pipeline(rayGenerationPool,
+											RenderPass(),
+											{ generationShader },
+											logicalDevice,
+											nullptr);
 }
 
 Void SRaytraceManager::refresh()
@@ -846,12 +883,4 @@ Void SRaytraceManager::shutdown()
 	rayGenerationPipeline.clear(logicalDevice, nullptr);
 	raytracePipeline.clear(logicalDevice, nullptr);
 	postprocessPipeline.clear(logicalDevice, nullptr);
-	postprocessPass.clear(logicalDevice, nullptr);
-
-	vkDestroySemaphore(logicalDevice.get_device(), renderFinished, nullptr);
-	vkDestroySemaphore(logicalDevice.get_device(), imageAvailable, nullptr);
-	vkDestroySemaphore(logicalDevice.get_device(), rayGenerationFinished, nullptr);
-	vkDestroySemaphore(logicalDevice.get_device(), raytraceFinished, nullptr);
-	vkDestroyFence(logicalDevice.get_device(), renderInFlight, nullptr);
-	vkDestroyFence(logicalDevice.get_device(), raytraceInFlight, nullptr);
 }

@@ -209,7 +209,6 @@ void main()
 		float indexOfRefraction = material.indexOfRefraction;
 		//float roughness = get_color_from_texture(material.roughness, info.uv).g;
 		
-		
 		if (indexOfRefraction != 0.0f)
 		{
 			color *= calculate_dielectric_material(ray, info, normal, albedo, indexOfRefraction);

@@ -72,21 +72,24 @@ public:
 	[[nodiscard]]
 	const Texture& get_screen_texture() const;
 
+	Void reload_shaders();
 	Void refresh();
 	Void shutdown();
 
-	VkSemaphore imageAvailable, renderFinished, rayGenerationFinished, raytraceFinished;
 	Bool isEnabled;
 	Int32 frameLimit;
 	Int32 maxBouncesCount;
+
 private:
 	SRaytraceManager() = default;
 	~SRaytraceManager() = default;
 	static constexpr IVector2 WORKGROUP_SIZE{ 16, 16 };
 	DescriptorPool raytracePool, rayGenerationPool, postprocessPool;
 	Pipeline rayGenerationPipeline, raytracePipeline, postprocessPipeline;
-	RenderPass postprocessPass;
+	Handle<RenderPass> postprocessPass;
 
+	Handle<VkFence> raytraceInFlight, renderInFlight;
+	Handle<VkSemaphore> imageAvailable, renderFinished, rayGenerationFinished, raytraceFinished;
 	Handle<Buffer> quadIndexes, quadPositions, quadNormals, quadUvs;
 	Handle<VkCommandPool> raytraceCommandPool;
 	Handle<CommandBuffer> rayGenerationBuffer, raytraceBuffer, renderBuffer;
@@ -107,8 +110,7 @@ private:
 	Float32 renderTime;
 	Int32 frameCount, trianglesCount;
 	Bool shouldRefresh;
-	VkFence raytraceInFlight, renderInFlight;
-	Bool areRaysRegenerated, frameLimitReached;
+	Bool areRaysRegenerated;
 	UInt64 currentImageIndex;
 
 	Void resize_images(const UVector2& size);
@@ -119,5 +121,4 @@ private:
 	Void create_descriptors();
 	Void setup_descriptors();
 	Void create_quad_buffers();
-	Void create_synchronization_objects();
 };

@@ -17,4 +17,6 @@ const Handle<DescriptorSetData> Handle<DescriptorSetData>::sNone = { -1 };
 const Handle<DescriptorLayoutData> Handle<DescriptorLayoutData>::sNone = { -1 };
 const Handle<CommandBuffer> Handle<CommandBuffer>::sNone = { -1 };
 const Handle<VkCommandPool> Handle<VkCommandPool>::sNone = { -1 };
+const Handle<VkSemaphore> Handle<VkSemaphore>::sNone = { -1 };
+const Handle<VkFence> Handle<VkFence>::sNone = { -1 };
 const Handle<Image> Handle<Image>::sNone = { -1 };
