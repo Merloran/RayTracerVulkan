@@ -44,6 +44,8 @@ public:
 	Handle<Texture>  load_texture(const String &filePath, const String &textureName, const ETextureType type);
 
 	Handle<Material> create_material(const Material &material, const String& name);
+
+	Void save_texture(const Texture& texture);
 	
 	Model    &get_model_by_name(const String &name);
 	Model	 &get_model_by_handle(const Handle<Model> handle);

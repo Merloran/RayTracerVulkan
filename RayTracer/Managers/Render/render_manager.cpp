@@ -133,6 +133,7 @@ Void SRenderManager::setup_imgui()
 Void SRenderManager::update_imgui()
 {
     SRaytraceManager& raytraceManager = SRaytraceManager::get();
+    SResourceManager& resourceManager = SResourceManager::get();
     // Start the Dear ImGui frame
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -142,8 +143,14 @@ Void SRenderManager::update_imgui()
     ImGui::Begin("Config");
 
 
-    ImGui::DragInt("Frame limit", &raytraceManager.frameLimit);
-    ImGui::SliderInt("Max bounces", &raytraceManager.maxBouncesCount, 0, 32);
+    ImGui::DragInt("Frame limit", &raytraceManager.frameLimit, 1, 0, Limits<Int32>::max());
+    Int32 bounces = raytraceManager.maxBouncesCount;
+    ImGui::SliderInt("Max bounces", &raytraceManager.maxBouncesCount, 0, 64);
+
+    if (raytraceManager.maxBouncesCount != bounces)
+    {
+        raytraceManager.refresh();
+    }
 
     if (ImGui::Button("Reload Shaders"))
     {
@@ -155,9 +162,15 @@ Void SRenderManager::update_imgui()
             reload_shaders();
         }
     }
-
+    
     if (raytraceManager.isEnabled)
     {
+        if (ImGui::Button("Save Image"))
+        {
+            Texture& texture = raytraceManager.get_screen_texture();
+            load_pixels_from_image(texture);
+            resourceManager.save_texture(texture);
+        }
         ImGui::Text("Accumulated frames: %d", raytraceManager.get_frame_count());
     }
 
@@ -658,6 +671,179 @@ Void SRenderManager::create_texture_image(Texture& texture, UInt32 mipLevels)
     stagingBuffer.clear(logicalDevice, nullptr);
 }
 
+Void SRenderManager::load_pixels_from_image(Texture& texture)
+{
+    Buffer buffer;
+    Image& image = get_image_by_handle(texture.image);
+    UInt64 pixelSize;
+    const UVector2 imageSize = image.get_size();
+    UInt8 type; // 0 - int8, 1 - float32
+    switch (image.get_format())
+    {
+        case VK_FORMAT_B8G8R8_UNORM:
+        case VK_FORMAT_R8G8B8_UNORM:
+        case VK_FORMAT_B8G8R8_UINT:
+        case VK_FORMAT_R8G8B8_UINT:
+        {
+            pixelSize = 3 * sizeof(UInt8);
+            break;
+        }
+        case VK_FORMAT_B8G8R8_SNORM:
+        case VK_FORMAT_R8G8B8_SNORM:
+        case VK_FORMAT_B8G8R8_SINT:
+        case VK_FORMAT_R8G8B8_SINT:
+        case VK_FORMAT_B8G8R8_SRGB:
+        case VK_FORMAT_R8G8B8_SRGB:
+        {
+            pixelSize = 3 * sizeof(Int8);
+            break;
+        }
+        case VK_FORMAT_B8G8R8A8_UNORM:
+        case VK_FORMAT_R8G8B8A8_UNORM:
+        case VK_FORMAT_B8G8R8A8_UINT:
+        case VK_FORMAT_R8G8B8A8_UINT:
+        {
+            pixelSize = 4 * sizeof(UInt8);
+            break;
+        }
+        case VK_FORMAT_B8G8R8A8_SNORM:
+        case VK_FORMAT_R8G8B8A8_SNORM:
+        case VK_FORMAT_B8G8R8A8_SINT:
+        case VK_FORMAT_R8G8B8A8_SINT:
+        case VK_FORMAT_B8G8R8A8_SRGB:
+        case VK_FORMAT_R8G8B8A8_SRGB:
+        {
+            pixelSize = 4 * sizeof(Int8);
+            break;
+        }
+        case VK_FORMAT_R32G32B32_UINT:
+        {
+            pixelSize = 3 * sizeof(UInt32);
+            break;
+        }
+        case VK_FORMAT_R32G32B32_SINT:
+        {
+            pixelSize = 3 * sizeof(Int32);
+            break;
+        }
+        case VK_FORMAT_R32G32B32_SFLOAT:
+        {
+            pixelSize = 3 * sizeof(Float32);
+            type = 1;
+            break;
+        }
+        case VK_FORMAT_R32G32B32A32_UINT:
+        {
+            pixelSize = 4 * sizeof(UInt32);
+            break;
+        }
+        case VK_FORMAT_R32G32B32A32_SINT:
+        {
+            pixelSize = 4 * sizeof(Int32);
+            break;
+        }
+        case VK_FORMAT_R32G32B32A32_SFLOAT:
+        {
+            pixelSize = 4 * sizeof(Float32);
+            type = 1;
+            break;
+        }
+        case VK_FORMAT_R64G64B64_UINT:
+        {
+            pixelSize = 3 * sizeof(UInt64);
+            break;
+        }
+        case VK_FORMAT_R64G64B64_SINT: 
+        {
+            pixelSize = 3 * sizeof(Int64);
+            break;
+        }
+        case VK_FORMAT_R64G64B64_SFLOAT: 
+        {
+            pixelSize = 3 * sizeof(Float64);
+            break;
+        }
+        case VK_FORMAT_R64G64B64A64_UINT:
+	    {
+            pixelSize = 4 * sizeof(UInt64);
+            break;
+	    }
+        case VK_FORMAT_R64G64B64A64_SINT:
+        {
+            pixelSize = 4 * sizeof(Int64);
+            break;
+        }
+        case VK_FORMAT_R64G64B64A64_SFLOAT:
+        {
+            pixelSize = 4 * sizeof(Float64);
+            break;
+        }
+        default:
+	    {
+            SPDLOG_ERROR("Not supported image format: {}, copy to buffer failed.", magic_enum::enum_name(image.get_format()));
+            return;
+	    }
+    }
+
+    const VkDeviceSize size = pixelSize * imageSize.x * imageSize.y;
+
+    buffer.create(physicalDevice,
+                  logicalDevice,
+                  size,
+                  VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                  nullptr);
+
+    logicalDevice.wait_idle();
+    copy_image_to_buffer(buffer, image);
+    //TODO: Sorry code for my sin ;-; don't judge my laziness ;-;
+    if (texture.data == nullptr)
+    {
+        texture.data = reinterpret_cast<UInt8*>(malloc(texture.channels * texture.size.x * texture.size.y));
+        if (texture.data == nullptr)
+        {
+            SPDLOG_ERROR("Failed to allocate texture memory");
+            free(texture.data);
+            return;
+        }
+    } else {
+        texture.data = reinterpret_cast<UInt8*>(realloc(texture.data, texture.channels * texture.size.x * texture.size.y));
+        if (texture.data == nullptr)
+        {
+            SPDLOG_ERROR("Failed to allocate texture memory");
+            free(texture.data);
+            return;
+        }
+    }
+
+    switch (type)
+    {
+		case 1:
+	    {
+            DynamicArray<Float32> tempData;
+            tempData.resize(size / sizeof(Float32));
+
+            vkMapMemory(logicalDevice.get_device(), buffer.get_memory(), 0, size, 0, buffer.get_mapped_memory());
+            memcpy(tempData.data(), *buffer.get_mapped_memory(), size);
+            vkUnmapMemory(logicalDevice.get_device(), buffer.get_memory());
+
+            for (UInt64 i = 0; i < tempData.size(); ++i)
+            {
+                texture.data[i] = UInt8(glm::clamp(glm::pow(tempData[i], 1.0f / 2.2f), 0.0f, 1.0f) * 255.0f);
+            }
+
+            tempData.clear();
+            break;
+	    }
+	    default:
+	    {
+			SPDLOG_ERROR("Not supported image type, failed to copy pixels");
+            return;
+	    }
+    }
+
+}
+
 Handle<Image> SRenderManager::create_image(const UVector2& size, VkFormat format, VkImageUsageFlags usage, VkImageTiling tiling, UInt32 mipLevels)
 {
 	const Handle<Image> handle = { Int32(images.size()) };
@@ -1142,6 +1328,50 @@ Void SRenderManager::copy_buffer_to_image(const Buffer& buffer, Image& image)
                            image.get_current_layout(),
                            1,
                            &region);
+
+    end_quick_commands(commandBuffer);
+}
+
+Void SRenderManager::copy_image_to_buffer(Buffer& buffer, Image& image)
+{
+    VkCommandBuffer commandBuffer;
+    begin_quick_commands(commandBuffer);
+
+    CommandBuffer bufferCommand;
+    bufferCommand.set_buffer(commandBuffer);
+    const VkImageLayout layout = image.get_current_layout();
+
+    bufferCommand.pipeline_image_barrier(image,
+										 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+
+
+
+    const UVector2& size = image.get_size();
+    VkBufferImageCopy region{};
+    
+    region.bufferOffset                    = 0;
+    region.bufferRowLength                 = 0;
+    region.bufferImageHeight               = 0;
+    region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel       = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount     = 1;
+    region.imageOffset                     = { 0, 0, 0 };
+    region.imageExtent                     = { size.x, size.y, 1 };
+
+    vkCmdCopyImageToBuffer(commandBuffer, 
+                           image.get_image(), 
+                           image.get_current_layout(),
+                           buffer.get_buffer(), 
+                           1,
+                           &region);
+
+    bufferCommand.pipeline_image_barrier(image,
+                                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                         layout);
 
     end_quick_commands(commandBuffer);
 }

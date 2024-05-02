@@ -396,6 +396,22 @@ Handle<Material> SResourceManager::create_material(const Material& material, con
 	return materialHandle;
 }
 
+Void SResourceManager::save_texture(const Texture& texture)
+{
+	stbi_flip_vertically_on_write(true);
+	const Int32 result = stbi_write_png(texture.name.c_str(), 
+										texture.size.x, 
+										texture.size.y,
+										texture.channels, 
+										texture.data,
+										texture.size.x * texture.channels);
+
+	if (result == 0)
+	{
+		SPDLOG_ERROR("Failed to save texture: {}", texture.name);
+	}
+}
+
 Model& SResourceManager::get_model_by_name(const String& name)
 {
 	const auto& iterator = nameToIdModels.find(name);

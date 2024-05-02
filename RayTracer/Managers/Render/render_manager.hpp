@@ -101,6 +101,7 @@ public:
 	Void create_mesh_buffers(Mesh& mesh);
 	Void generate_texture_images(DynamicArray<Texture>& textures);
 	Void create_texture_image(Texture& texture, UInt32 mipLevels = 1);
+	Void load_pixels_from_image(Texture& texture);
 	Handle<Image> create_image(const UVector2& size,
 							   VkFormat format,
 							   VkImageUsageFlags usage,
@@ -126,6 +127,7 @@ public:
 
 		return handle;
 	}
+
 	template <typename Type>
 	Void update_dynamic_buffer(const Type& data, Buffer& buffer)
 	{
@@ -245,6 +247,7 @@ private:
 
 	Void generate_mipmaps(Image& image);
 	Void copy_buffer_to_image(const Buffer& buffer, Image& image);
+	Void copy_image_to_buffer(Buffer& buffer, Image& image);
 	Void copy_buffer(const Buffer& source, Buffer& destination);
 	Void begin_quick_commands(VkCommandBuffer &commandBuffer);
 	Void end_quick_commands(VkCommandBuffer commandBuffer);

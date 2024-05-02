@@ -367,3 +367,5 @@ Assets/
 
 # Compiled Shaders
 *.spv
+*.bvh
+*.bvh

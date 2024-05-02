@@ -1,5 +1,6 @@
 #include "raytrace_manager.hpp"
 
+
 #include "../Render/Camera/camera.hpp"
 #include "../Render/Common/image.hpp"
 #include "../Render/render_manager.hpp"
@@ -10,12 +11,11 @@
 #include "../Resource/Common/handle.hpp"
 #include "../Resource/Common/material.hpp"
 #include "../Resource/Common/mesh.hpp"
-#include "Common/bvh_node.hpp"
 #include "Common/vertex.hpp"
 
 #include <imgui.h>
-#include <imgui_impl_vulkan.h>
 #include <magic_enum.hpp>
+
 
 
 SRaytraceManager& SRaytraceManager::get()
@@ -33,8 +33,11 @@ Void SRaytraceManager::startup()
 	areRaysRegenerated = false;
 	isEnabled = false;
 	currentImageIndex = 0;
-	accumulationTexture.name = "Result.png";
-	accumulationTexture.channels = 4;
+	for (Texture& texture : screenTextures)
+	{
+		texture.name	 = "Result.png";
+		texture.channels = 4;
+	}
 	rayGeneration = renderManager.load_shader(renderManager.SHADERS_PATH + "RayGeneration.comp", EShaderType::Compute);
 	raytrace	  = renderManager.load_shader(renderManager.SHADERS_PATH + "RayTrace.comp", EShaderType::Compute);
 	screenV		  = renderManager.load_shader(renderManager.SHADERS_PATH + "Screen.vert", EShaderType::Vertex);
@@ -151,7 +154,7 @@ Void SRaytraceManager::startup()
 	{
 		screenTexture.image = renderManager.create_image(displayManager.get_framebuffer_size(),
 														 VK_FORMAT_R32G32B32A32_SFLOAT,
-														 VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
+														 VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
 														 VK_IMAGE_TILING_OPTIMAL);
 		renderManager.transition_image_layout(renderManager.get_image_by_handle(screenTexture.image),
 											  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
@@ -267,6 +270,7 @@ Void SRaytraceManager::resize_images(const UVector2& size)
 
 	for (UInt64 i = 0; i < screenTextures.size(); ++i)
 	{
+		screenTextures[i].size  = size;
 		DescriptorResourceInfo screenResource;
 		VkDescriptorImageInfo& screenInfo = screenResource.imageInfos.emplace_back();
 		const Image& screen = renderManager.get_image_by_handle(screenTextures[i].image);
@@ -813,9 +817,9 @@ FVector3 SRaytraceManager::get_background_color() const
 	return backgroundColor;
 }
 
-const Texture& SRaytraceManager::get_screen_texture() const
+Texture& SRaytraceManager::get_screen_texture()
 {
-	return accumulationTexture;
+	return screenTextures[currentImageIndex];
 }
 
 Void SRaytraceManager::reload_shaders()
@@ -883,4 +887,10 @@ Void SRaytraceManager::shutdown()
 	rayGenerationPipeline.clear(logicalDevice, nullptr);
 	raytracePipeline.clear(logicalDevice, nullptr);
 	postprocessPipeline.clear(logicalDevice, nullptr);
+
+
+	for (Texture& texture : screenTextures)
+	{
+		free(texture.data);
+	}
 }

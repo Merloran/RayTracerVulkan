@@ -29,5 +29,5 @@ struct Texture
 	ETextureType type = ETextureType::None;
 	Handle<Image> image;
 	String name;
-	UInt8* data;
+	UInt8* data = nullptr;
 };

@@ -69,8 +69,7 @@ public:
 	Int32 get_frame_count() const;
 	[[nodiscard]]
 	FVector3 get_background_color() const;
-	[[nodiscard]]
-	const Texture& get_screen_texture() const;
+	Texture& get_screen_texture();
 
 	Void reload_shaders();
 	Void refresh();

@@ -1,9 +1,11 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : require
-#define EPSILON 0.00000095367431640625f
+#define EPSILON 0.00000095367431640625f // 2 ^ (-20)
 #define PI 3.1415926535897932384626433832795f
 #define ONE_OVER_PI 1.0f / 3.1415926535897932384626433832795f
 #define ONE_OVER_TWO_PI 1.0f / (2.0f * 3.1415926535897932384626433832795f)
+#define UINT_MAX 0xffffffffU
+#define INV_UINT_MAX 1.0f / float(UINT_MAX)
 
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
@@ -112,7 +114,7 @@ layout( push_constant ) uniform PushConstants
 	int   environmentMapId;
 } constants;
 
-vec2 seed;
+uint seed;
 
 float rand();
 float rand(vec2 bounds);
@@ -162,13 +164,13 @@ void main()
 	{
         return;
     }
-	seed = vec2(gid) + constants.time;
+	seed = (gid.x + gid.y * constants.imageSize.x) * (constants.frameCount + 1);
     vec3 color = vec3(1.0f);
 	
 	Ray ray;
 	ray.origin = constants.cameraPosition;
 	const int numberOfSectors = 64;
-	ivec2 gridOffset = ivec2(mod(constants.frameCount, numberOfSectors), int(constants.frameCount / numberOfSectors));
+	ivec2 gridOffset = ivec2(constants.frameCount, int(constants.frameCount / numberOfSectors));
 	gridOffset = ivec2(mod(gridOffset, numberOfSectors));
 	vec2 offset = (vec2(rand(), rand()) + vec2(gridOffset)) / float(numberOfSectors) - 0.5f;
 	vec3 randomOffset = (offset.x * constants.pixelDeltaU) + (offset.y * constants.pixelDeltaV);
@@ -370,11 +372,16 @@ float fresnel_function(float vDotH, float refractionRatio)
 	return r0 + (1.0f - r0) * pow((1.0f - vDotH), 5.0f);
 }
 
-
+// float from 0 to 1
 float rand() 
 {
-    seed *= fract(sin(dot(seed, vec2(12.9898, 78.233f))) * 43758.5453f);
-    return fract(sin(dot(seed, vec2(12.9898, 78.233f))) * 43758.5453f);
+	//Wang hash function
+	seed = (seed ^ 61) ^ (seed >> 16);
+	seed *= 9;
+	seed = seed ^ (seed >> 4);
+	seed *= 0x27d4eb2dU;
+	seed = seed ^ (seed >> 15);
+    return float(seed) * (INV_UINT_MAX);
 }
 
 float rand(vec2 bounds) 
@@ -406,7 +413,7 @@ vec3 rand_in_unit_hemisphere(vec3 normal)
 	{
 		return randomVector;
 	}
-	return -randomVector;
+	return -randomVector; //TODO: CHECK THIS !!!
 }
 
 vec3 random_cosine_direction()
@@ -597,13 +604,12 @@ vec3 calculate_surface_normal(int triangleId, vec3 faceNormal, vec3 textureNorma
 	vec2 deltaUV2  = triangle.uvs[2] - triangle.uvs[0];
 	
 	float denominator = deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x;
-	float r;
 	if (abs(denominator) <= EPSILON)
 	{
-		r = 1.0f / EPSILON;
-	} else {
-		r = 1.0f / denominator;
+		return faceNormal;
 	}
+	
+	float r = 1.0f / denominator;
 	
 	vec3 tangent   = (deltaPos1 * deltaUV2.y - deltaPos2 * deltaUV1.y) * r;
 	vec3 bitangent = (deltaPos2 * deltaUV1.x - deltaPos1 * deltaUV2.x) * r;
@@ -672,12 +678,14 @@ vec3 get_random_in_triangle(int triangleId)
 	vec3 b = vertexes[indexes[triangleId + 1]].position;
 	vec3 c = vertexes[indexes[triangleId + 2]].position;
 	
-	vec3 u = b - a;
-	vec3 v = c - a;
-	
-	float r1 = rand();
-	float r2 = min(1.0f - r1, rand());
-	vec3 p = a + u * r1 + v * r2;
+    float r1 = sqrt(rand());
+    float r2 = rand();
+
+    float alpha = 1.0f - r1;
+    float beta  = r1 * (1.0f - r2);
+    float gamma = r1 * r2;
+
+    vec3 p = a * alpha + b * beta + c * gamma;
 	
 	return p;
 }
@@ -690,14 +698,14 @@ float get_lights_pdf(vec3 origin, vec3 direction)
 	for (int emissionId = 0; emissionId < constants.emissionTrianglesCount; ++emissionId)
 	{
 		int triangleId = int(emissionTriangles[emissionId]);
-		sum += weight * get_triangle_pdf(triangleId, origin, direction);
+		sum += get_triangle_pdf(triangleId, origin, direction);
 	}
-	return sum + EPSILON;
+	return weight * sum + EPSILON;
 }
 
 vec3 get_light_path(vec3 origin)
 {
-	int triangleId = int(emissionTriangles[int(rand() * float(constants.emissionTrianglesCount - 1))]);
+	int triangleId = int(emissionTriangles[uint(round(rand(0, constants.emissionTrianglesCount - 1)))]);
 	
 	return get_random_in_triangle(triangleId) - origin;
 }
@@ -713,5 +721,5 @@ vec3 get_pdf_direction(vec3 origin, vec3 normal)
 
 float get_pdf_value(vec3 origin, vec3 direction, vec3 normal)
 {
-	return get_lights_pdf(origin, direction) * 0.5f + get_cosine_pdf(normal, direction) * 0.5f;
+	return (get_lights_pdf(origin, direction) + get_cosine_pdf(normal, direction)) * 0.5f;
 }
