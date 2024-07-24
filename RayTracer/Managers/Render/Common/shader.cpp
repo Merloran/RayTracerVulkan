@@ -13,13 +13,13 @@ Void Shader::create(const String& filePath, const String& destinationPath, const
     this->functionName = functionName;
     type = shaderType;
 	compose_name(filePath, shaderType);
-
+#ifndef NDEBUG
 	const Bool isCompiled = compile(filePath, destinationPath, compilerPath);
     if (!isCompiled)
     {
         return;
     }
-
+#endif
     const Bool isLoaded = load(filePath, destinationPath);
     if (!isLoaded)
     {
