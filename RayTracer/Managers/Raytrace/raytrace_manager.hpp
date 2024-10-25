@@ -63,7 +63,7 @@ public:
 
 	Void startup();
 
-	Void update(Camera& camera, Float32 deltaTime);
+	Void update(Camera& camera, Float32 &deltaTime, Float32 &currentFrame, Float32 &lastFrame);
 
 	[[nodiscard]]
 	Int32 get_frame_count() const;

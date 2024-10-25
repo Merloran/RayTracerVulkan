@@ -15,7 +15,7 @@
 
 #include <imgui.h>
 #include <magic_enum.hpp>
-
+#include <GLFW/glfw3.h>
 
 
 SRaytraceManager& SRaytraceManager::get()
@@ -182,7 +182,7 @@ Void SRaytraceManager::startup()
 	renderBuffer		= renderManager.get_command_buffer_handle_by_name("RenderBuffer");
 }
 
-Void SRaytraceManager::update(Camera &camera, Float32 deltaTime)
+Void SRaytraceManager::update(Camera &camera, Float32 &deltaTime, Float32 &currentFrame, Float32 &lastFrame)
 {
 	SDisplayManager &displayManager = SDisplayManager::get();
 	SRenderManager &renderManager = SRenderManager::get();
@@ -211,6 +211,10 @@ Void SRaytraceManager::update(Camera &camera, Float32 deltaTime)
 		return;
 	}
 	// SPDLOG_WARN("NOT HELLO :(");
+
+	currentFrame = Float32(glfwGetTime());
+	deltaTime = currentFrame - lastFrame;
+	lastFrame = currentFrame;
 
 	if (hasWindowResized || hasCameraChanged)
 	{

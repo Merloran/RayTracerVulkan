@@ -54,7 +54,7 @@ public:
 	Void setup_imgui();
 
 
-	Void update_imgui();
+	Void update_imgui(Float32 deltaTimeMs);
 	Void render_imgui();
 	Void render(Camera& camera, const DynamicArray<Model>& models, Float32 time);
 

@@ -5,7 +5,16 @@ layout (location = 0) in vec3 worldPosition;
 layout (location = 1) in vec3 worldNormal;  
 layout (location = 2) in vec2 uvFragment;
 
-layout(set = 1, binding = 0) uniform sampler2D Albedo;
+layout(set = 1, binding = 0) uniform sampler2D textures[];
+
+layout( push_constant ) uniform PushConstants
+{
+	layout(offset = 64) // vertex constants
+	uint albedoId;
+	uint metalnessId;
+	uint roughnessId;
+	uint emissionId;
+} constants;
 
 layout (location = 0) out vec4 color;
 
@@ -13,7 +22,7 @@ void main()
 {
 	const vec3 lightColor = vec3(1.0f, 1.0f, 1.0f);
 	vec3 lightPosition = vec3(10.0f, 50.0f, 10.0f);
-	vec4 objectColor = texture(Albedo, uvFragment);
+	vec4 objectColor = texture(textures[constants.albedoId], uvFragment);
 	if (objectColor.w < 0.1f)
 	{
 		discard;

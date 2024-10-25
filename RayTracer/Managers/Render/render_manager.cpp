@@ -139,7 +139,7 @@ Void SRenderManager::setup_imgui()
 
 
 
-Void SRenderManager::update_imgui()
+Void SRenderManager::update_imgui(Float32 deltaTimeMs)
 {
     SRaytraceManager& raytraceManager = SRaytraceManager::get();
     SResourceManager& resourceManager = SResourceManager::get();
@@ -186,7 +186,7 @@ Void SRenderManager::update_imgui()
     ImGui::Checkbox("Raytrace enabled", &raytraceManager.isEnabled);
 
     ImGuiIO& io = ImGui::GetIO(); (Void)io;
-    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+    ImGui::Text("FPS: %.2f, %.2fms", 1.0f / deltaTimeMs, deltaTimeMs * 1000.0f);
     ImGui::End();
 
     ImGui::Render();

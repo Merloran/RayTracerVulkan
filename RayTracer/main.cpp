@@ -1,5 +1,4 @@
 ﻿#include <GLFW/glfw3.h>
-#include <thread>
 
 #include "Managers/Resource/resource_manager.hpp"
 #include "Managers/Display/display_manager.hpp"
@@ -17,7 +16,7 @@ Int32 main()
 	SRaytraceManager& raytraceManager = SRaytraceManager::get();
 
 	resourceManager.startup();
-	resourceManager.load_gltf_asset(resourceManager.ASSETS_PATH + "CornellBox/CornellBox.gltf");
+	resourceManager.load_gltf_asset(resourceManager.ASSETS_PATH + "SponzaLighted/SponzaLighted.gltf");
 	resourceManager.load_texture(resourceManager.TEXTURES_PATH + "EnvironmentMap.hdr", "EnvironmentMap", ETextureType::HDR);
 
 
@@ -35,19 +34,21 @@ Int32 main()
 	camera.initialize(FVector3(5.0f, 2.0f, 0.0f));
 	Float32 lastFrame = 0.0f;
 	Float32 time = 0.0f;
+	Float32 currentFrame = Float32(glfwGetTime());
+	Float32 deltaTimeMs = currentFrame - lastFrame;
 	while (!displayManager.should_window_close())
 	{
-		Float32 currentFrame = Float32(glfwGetTime());
-		Float32 deltaTimeMs = currentFrame - lastFrame;
 		time += deltaTimeMs;
-		lastFrame = currentFrame;
 		displayManager.poll_events();
 		camera.catch_input(deltaTimeMs);
-		renderManager.update_imgui();
+		renderManager.update_imgui(deltaTimeMs);
 		if (raytraceManager.isEnabled)
 		{
-			raytraceManager.update(camera, deltaTimeMs);
+			raytraceManager.update(camera, deltaTimeMs, currentFrame, lastFrame);
 		} else {
+			currentFrame = Float32(glfwGetTime());
+			deltaTimeMs = currentFrame - lastFrame;
+			lastFrame = currentFrame;
 			renderManager.render(camera, resourceManager.get_models(), time);
 		}
 		renderManager.render_imgui();
