@@ -47,8 +47,6 @@ class SRenderManager
 {
 public:
 	const String SHADERS_PATH = "Resources/Shaders/";
-	const String COMPILED_SHADER_EXTENSION = ".spv";
-	const String GLSL_COMPILER_PATH = "D:/VulkanSDK/Bin/glslc.exe";
 	SRenderManager(SRenderManager&) = delete;
 	static SRenderManager& get();
 

@@ -29,25 +29,25 @@ Void SResourceManager::startup()
 	}
 	defaultMaterial.name = "DefaultMaterial";
 
-	defaultMaterial.textures[UInt64(ETextureType::Albedo)] = load_texture(TEXTURES_PATH + "Default/Albedo.png",
-									  									  "DefaultBaseColor", 
-																		  ETextureType::Albedo);
+	defaultMaterial[ETextureType::Albedo] = load_texture(TEXTURES_PATH + "Default/Albedo.png",
+									  					 "DefaultBaseColor", 
+														 ETextureType::Albedo);
 
-	defaultMaterial.textures[UInt64(ETextureType::Normal)] = load_texture(TEXTURES_PATH + "Default/Normal.png",
-																		  "DefaultNormal", 
-																		  ETextureType::Normal);
+	defaultMaterial[ETextureType::Normal] = load_texture(TEXTURES_PATH + "Default/Normal.png",
+														 "DefaultNormal", 
+														 ETextureType::Normal);
 
-	defaultMaterial.textures[UInt64(ETextureType::Roughness)] = load_texture(TEXTURES_PATH + "Default/Roughness.png",
-																			 "DefaultRoughness", 
-																			 ETextureType::Roughness);
+	defaultMaterial[ETextureType::Roughness] = load_texture(TEXTURES_PATH + "Default/Roughness.png",
+															"DefaultRoughness", 
+															ETextureType::Roughness);
 
-	defaultMaterial.textures[UInt64(ETextureType::Metalness)] = load_texture(TEXTURES_PATH + "Default/Metalness.png",
-																			 "DefaultMetalness", 
-																			 ETextureType::Metalness);
+	defaultMaterial[ETextureType::Metalness] = load_texture(TEXTURES_PATH + "Default/Metalness.png",
+															"DefaultMetalness", 
+															ETextureType::Metalness);
 
-	defaultMaterial.textures[UInt64(ETextureType::AmbientOcclusion)] = load_texture(TEXTURES_PATH + "Default/AmbientOcclusion.png",
-																					"DefaultAmbientOcclusion",
-																					ETextureType::AmbientOcclusion);
+	defaultMaterial[ETextureType::AmbientOcclusion] = load_texture(TEXTURES_PATH + "Default/AmbientOcclusion.png",
+																   "DefaultAmbientOcclusion",
+																   ETextureType::AmbientOcclusion);
 
 	create_material(defaultMaterial, defaultMaterial.name);
 }
@@ -272,9 +272,9 @@ Handle<Material> SResourceManager::load_material(const std::filesystem::path& as
 		const tinygltf::Image& image = gltfModel.images[texture.source];
 		const std::filesystem::path textureName = image.uri;
 		const ETextureType type = ETextureType::Albedo;
-		material.textures[UInt64(type)] = load_texture(assetPath / image.uri,
-													   textureName.stem().string(), 
-													   type);
+		material[type] = load_texture(assetPath / image.uri,
+									  textureName.stem().string(), 
+									  type);
 	}
 
 	if (metallicRoughnessId >= 0)
@@ -283,9 +283,9 @@ Handle<Material> SResourceManager::load_material(const std::filesystem::path& as
 		const tinygltf::Image& image = gltfModel.images[texture.source];
 		const std::filesystem::path textureName = image.uri;
 		const ETextureType type = ETextureType::RM;
-		material.textures[UInt64(type)] = load_texture(assetPath / image.uri,
-													   textureName.stem().string(),
-													   type);
+		material[type] = load_texture(assetPath / image.uri,
+									  textureName.stem().string(),
+									  type);
 	}
 
 	if (normalId >= 0)
@@ -294,9 +294,9 @@ Handle<Material> SResourceManager::load_material(const std::filesystem::path& as
 		const tinygltf::Image& image = gltfModel.images[texture.source];
 		const std::filesystem::path textureName = image.uri;
 		const ETextureType type = ETextureType::Normal;
-		material.textures[UInt64(type)] = load_texture(assetPath / image.uri,
-													   textureName.stem().string(),
-													   type);
+		material[type] = load_texture(assetPath / image.uri,
+									  textureName.stem().string(),
+									  type);
 	}
 
 	if (ambientOcclusionId >= 0)
@@ -305,9 +305,9 @@ Handle<Material> SResourceManager::load_material(const std::filesystem::path& as
 		const tinygltf::Image& image = gltfModel.images[texture.source];
 		const std::filesystem::path textureName = image.uri;
 		const ETextureType type = ETextureType::AmbientOcclusion;
-		material.textures[UInt64(type)] = load_texture(assetPath / image.uri,
-													   textureName.stem().string(),
-													   type);
+		material[type] = load_texture(assetPath / image.uri,
+									  textureName.stem().string(),
+									  type);
 	}
 
 	if (emissionId >= 0)
@@ -316,9 +316,9 @@ Handle<Material> SResourceManager::load_material(const std::filesystem::path& as
 		const tinygltf::Image& image = gltfModel.images[texture.source];
 		const std::filesystem::path textureName = image.uri;
 		const ETextureType type = ETextureType::Emission;
-		material.textures[UInt64(type)] = load_texture(assetPath / image.uri,
-													   textureName.stem().string(),
-													   type);
+		material[type] = load_texture(assetPath / image.uri,
+									  textureName.stem().string(),
+									  type);
 	}
 
 	auto iterator = gltfMaterial.extensions.find("KHR_materials_ior");

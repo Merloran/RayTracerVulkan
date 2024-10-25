@@ -103,6 +103,6 @@ Void SDisplayManager::shutdown()
 
 Void SDisplayManager::s_framebuffer_resize_callback(GLFWwindow* window, Int32 width, Int32 height)
 {
-	SDisplayManager& displayManager = *reinterpret_cast<SDisplayManager*>(glfwGetWindowUserPointer(window));
+	SDisplayManager& displayManager = *static_cast<SDisplayManager*>(glfwGetWindowUserPointer(window));
 	displayManager.doesFramebufferResized = true;
 }

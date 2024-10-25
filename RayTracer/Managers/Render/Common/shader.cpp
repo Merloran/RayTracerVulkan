@@ -3,47 +3,51 @@
 #include "logical_device.hpp"
 #include <filesystem>
 #include <fstream>
-#include <sstream>
+#include <magic_enum.hpp>
+#include <glslang/SPIRV/GlslangToSpv.h>
+#include <glslang/Public/ShaderLang.h>
+#include <glslang/Public/ResourceLimits.h>
 
 
-Void Shader::create(const String& filePath, const String& destinationPath, const String& compilerPath, const String& functionName, const EShaderType shaderType, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+Void Shader::create(const String& filePath, const String& functionName, const EShaderType shaderType, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
     this->filePath = filePath;
-    this->destinationPath = destinationPath;
     this->functionName = functionName;
     type = shaderType;
 	compose_name(filePath, shaderType);
-#ifndef NDEBUG
-	const Bool isCompiled = compile(filePath, destinationPath, compilerPath);
-    if (!isCompiled)
-    {
-        return;
-    }
-#endif
-    const Bool isLoaded = load(filePath, destinationPath);
+
+    const Bool isLoaded = load(filePath);
     if (!isLoaded)
     {
         return;
     }
+
+	const Bool isCompiled = compile(filePath);
+    if (!isCompiled)
+    {
+        return;
+    }
+
 
     create_module(logicalDevice, allocator);
 }
 
-Bool Shader::recreate(const String& compilerPath, const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
+Bool Shader::recreate(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
     clear(logicalDevice, allocator);
 
-    const Bool isCompiled = compile(filePath, destinationPath, compilerPath);
+    const Bool isLoaded = load(filePath);
+    if (!isLoaded)
+    {
+        return false;
+    }
+
+    const Bool isCompiled = compile(filePath);
     if (!isCompiled)
     {
         return false;
     }
 
-    const Bool isLoaded = load(filePath, destinationPath);
-    if (!isLoaded)
-    {
-        return false;
-    }
 
     return create_module(logicalDevice, allocator);
 }
@@ -110,26 +114,75 @@ Void Shader::compose_name(const String& filePath, EShaderType type)
 	name = prefix + path.stem().string();
 }
 
-Bool Shader::compile(const String& filePath, const String& destinationPath, const String& compilerPath)
+Bool Shader::compile(const String& filePath)
 {
-    const String compileParameters = "-o";
-    std::stringstream command;
-    command << compilerPath << " " << filePath << " " << compileParameters << " " << destinationPath;
-    const Int32 result = system(command.str().c_str());
+    const std::filesystem::path path(filePath);
+    const String filename = path.filename().string();
 
-    if (result == 0)
+    EShLanguage stage;
+    switch (type)
     {
-        SPDLOG_INFO("Successfully compiled {} shader", name);
-    } else {
-        SPDLOG_ERROR("Compiling {} ended with code: {}", name, result);
+        case EShaderType::Vertex:
+        {
+            stage = EShLangVertex;
+            break;
+        }
+        case EShaderType::Geometry:
+        {
+            stage = EShLangGeometry;
+            break;
+        }
+        case EShaderType::Fragment:
+        {
+            stage = EShLangFragment;
+            break;
+        }
+        case EShaderType::Compute:
+        {
+            stage = EShLangCompute;
+            break;
+        }
+        case EShaderType::Count:
+        case EShaderType::None:
+        default:
+        {
+            SPDLOG_ERROR("Not supported shader type: {}", magic_enum::enum_name(type));
+            return false;
+        }
+    }
+
+    glslang::TShader shader(stage);
+
+    const Char* shaderStrings = code.c_str();
+    shader.setStrings(&shaderStrings, 1);
+
+    shader.setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan, 460);
+    shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_3);
+    shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_6);
+    
+    if (!shader.parse(GetDefaultResources(), 100, false, EShMsgDefault))
+    {
+        SPDLOG_ERROR("GLSL parsing failed: {}", shader.getInfoLog());
         return false;
     }
+
+    glslang::TProgram program;
+    program.addShader(&shader);
+
+    if (!program.link(EShMsgDefault)) 
+    {
+        SPDLOG_ERROR("GLSL linking failed: {}", program.getInfoLog());
+        return false;
+    }
+
+    glslang::GlslangToSpv(*program.getIntermediate(stage), compiledCode);
+
     return true;
 }
 
-Bool Shader::load(const String& filePath, const String& destinationPath)
+Bool Shader::load(const String& filePath)
 {
-    std::ifstream file(destinationPath, std::ios::ate | std::ios::binary);
+    std::ifstream file(filePath, std::ios::ate | std::ios::binary);
     if (!file.is_open())
     {
         SPDLOG_ERROR("Failed to open shader {}", filePath);
@@ -148,8 +201,8 @@ Bool Shader::create_module(const LogicalDevice& logicalDevice, const VkAllocatio
 {
     VkShaderModuleCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    createInfo.codeSize = code.size();
-    createInfo.pCode = reinterpret_cast<const UInt32*>(code.data());
+    createInfo.codeSize = compiledCode.size() * sizeof(UInt32);
+    createInfo.pCode = compiledCode.data();
     
     if (vkCreateShaderModule(logicalDevice.get_device(), &createInfo, allocator, &module) != VK_SUCCESS)
     {
@@ -163,6 +216,7 @@ Bool Shader::create_module(const LogicalDevice& logicalDevice, const VkAllocatio
 Void Shader::clear(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator)
 {
     code.clear();
+    compiledCode.clear();
     vkDestroyShaderModule(logicalDevice.get_device(), module, allocator);
     module = VK_NULL_HANDLE;
 }

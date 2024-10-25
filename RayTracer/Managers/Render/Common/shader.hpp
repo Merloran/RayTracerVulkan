@@ -10,22 +10,19 @@ enum class EShaderType : UInt8
 	Geometry,
 	Fragment,
 	Compute,
-	Count = 4U
+	Count
 };
 
 class Shader
 {
 public:
-    Void create(const String& filePath, 
-				const String& destinationPath,
-                const String& compilerPath,
+    Void create(const String& filePath,
                 const String& functionName,
                 const EShaderType shaderType, 
                 const LogicalDevice& logicalDevice, 
                 const VkAllocationCallbacks* allocator);
 
-    Bool recreate(const String& compilerPath, 
-                  const LogicalDevice& logicalDevice, 
+    Bool recreate(const LogicalDevice& logicalDevice, 
                   const VkAllocationCallbacks* allocator);
 
     [[nodiscard]]
@@ -43,13 +40,14 @@ public:
 
 private:
     VkShaderModule module;
-    DynamicArray<Char> code;
-    String filePath, destinationPath;
+    String code;
+    DynamicArray<UInt32> compiledCode;
+    String filePath;
     String name, functionName;
     EShaderType type;
 
     Void compose_name(const String& filePath, EShaderType type);
-    Bool compile(const String& filePath, const String& destinationPath, const String& compilerPath);
-    Bool load(const String& filePath, const String& destinationPath);
+    Bool compile(const String& filePath);
+    Bool load(const String& filePath);
     Bool create_module(const LogicalDevice& logicalDevice, const VkAllocationCallbacks* allocator);
 };

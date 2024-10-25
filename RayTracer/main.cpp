@@ -17,7 +17,7 @@ Int32 main()
 	SRaytraceManager& raytraceManager = SRaytraceManager::get();
 
 	resourceManager.startup();
-	resourceManager.load_gltf_asset(resourceManager.ASSETS_PATH + "SponzaLighted/SponzaLighted.gltf");
+	resourceManager.load_gltf_asset(resourceManager.ASSETS_PATH + "CornellBox/CornellBox.gltf");
 	resourceManager.load_texture(resourceManager.TEXTURES_PATH + "EnvironmentMap.hdr", "EnvironmentMap", ETextureType::HDR);
 
 

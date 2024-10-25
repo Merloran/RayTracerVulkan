@@ -235,6 +235,8 @@ Void SRaytraceManager::update(Camera &camera, Float32 deltaTime)
 Void SRaytraceManager::resize_images(const UVector2& size)
 {
 	SRenderManager& renderManager = SRenderManager::get();
+	const LogicalDevice& logicalDevice = renderManager.get_logical_device();
+	logicalDevice.wait_compute_queue_idle();
 	accumulationTexture.size = size;
 	directionTexture.size    = size;
 	renderManager.resize_image(size, accumulationTexture.image);
@@ -833,10 +835,10 @@ Void SRaytraceManager::reload_shaders()
 	Shader& fragment = renderManager.get_shader_by_handle(screenF);
 	Shader& vertex = renderManager.get_shader_by_handle(screenV);
 
-    result &= generationShader.recreate(renderManager.GLSL_COMPILER_PATH, logicalDevice, nullptr);
-    result &= traceShader.recreate(renderManager.GLSL_COMPILER_PATH, logicalDevice, nullptr);
-    result &= fragment.recreate(renderManager.GLSL_COMPILER_PATH, logicalDevice, nullptr);
-    result &= vertex.recreate(renderManager.GLSL_COMPILER_PATH, logicalDevice, nullptr);
+    result &= generationShader.recreate(logicalDevice, nullptr);
+    result &= traceShader.recreate(logicalDevice, nullptr);
+    result &= fragment.recreate(logicalDevice, nullptr);
+    result &= vertex.recreate(logicalDevice, nullptr);
 
     if (!result)
     {

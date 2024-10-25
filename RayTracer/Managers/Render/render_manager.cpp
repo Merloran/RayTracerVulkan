@@ -20,6 +20,7 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 #include <magic_enum.hpp>
+#include <glslang/Public/ShaderLang.h>
 
 
 SRenderManager& SRenderManager::get()
@@ -52,6 +53,12 @@ Void SRenderManager::startup()
     inFlightFence  = create_fence("rasterizeInFlight");
     imageAvailable = create_semaphore("rasterizeImageAvailable");
     renderFinished = create_semaphore("rasterizeRenderFinished");
+
+    if (!glslang::InitializeProcess())
+    {
+        SPDLOG_ERROR("Failed to initialize glslang.");
+        return;
+    }
 
     //Shaders should be created after logical device
     Handle<Shader> vert = load_shader(SHADERS_PATH + "Shader.vert", EShaderType::Vertex);
@@ -125,7 +132,9 @@ Void SRenderManager::setup_imgui()
     initInfo.MSAASamples     = pass.get_samples();
     initInfo.Allocator       = nullptr;
     initInfo.CheckVkResultFn = s_check_vk_result;
-    ImGui_ImplVulkan_Init(&initInfo, pass.get_render_pass());
+    initInfo.RenderPass      = pass.get_render_pass();
+
+    ImGui_ImplVulkan_Init(&initInfo);
 }
 
 
@@ -561,8 +570,7 @@ Handle<Shader> SRenderManager::load_shader(const String& filePath, const EShader
     Shader& shader        = shaders.emplace_back();
 
     const std::filesystem::path path(filePath);
-    const String destinationPath = (SHADERS_PATH / path.filename()).string() + COMPILED_SHADER_EXTENSION;
-    shader.create(filePath, destinationPath, GLSL_COMPILER_PATH, functionName, shaderType, logicalDevice, nullptr);
+    shader.create(filePath, functionName, shaderType, logicalDevice, nullptr);
 
     const Handle<Shader> handle{Int32(shaderId)};
     auto iterator = nameToIdShaders.find(shader.get_name());
@@ -1039,7 +1047,7 @@ Void SRenderManager::create_vulkan_instance()
     appInfo.applicationVersion = VK_MAKE_API_VERSION(0U, 1U, 0U, 0U);
     appInfo.pEngineName        = "RayEngine";
     appInfo.engineVersion      = VK_MAKE_API_VERSION(0U, 1U, 0U, 0U);
-    appInfo.apiVersion         = VK_API_VERSION_1_0;
+    appInfo.apiVersion         = VK_MAKE_API_VERSION(0U, 1U, 3U, 0U);
     
     VkInstanceCreateInfo createInfo{};
     const DynamicArray<const Char*> extensions = get_required_extensions();
@@ -1154,8 +1162,8 @@ Void SRenderManager::recreate_swapchain()
 Void SRenderManager::reload_shaders()
 {
     Bool result = true;
-    result &= get_shader_by_name("VShader").recreate(GLSL_COMPILER_PATH, logicalDevice, nullptr);
-    result &= get_shader_by_name("FShader").recreate(GLSL_COMPILER_PATH, logicalDevice, nullptr);
+    result &= get_shader_by_name("VShader").recreate(logicalDevice, nullptr);
+    result &= get_shader_by_name("FShader").recreate(logicalDevice, nullptr);
 
     if (!result)
     {
@@ -1505,6 +1513,8 @@ Void SRenderManager::shutdown()
     }
     shaders.clear();
     logicalDevice.clear(nullptr);
+
+    glslang::FinalizeProcess();
 
     if constexpr (DebugMessenger::ENABLE_VALIDATION_LAYERS)
     {

@@ -2,8 +2,8 @@
 #extension GL_EXT_nonuniform_qualifier : require
 #define EPSILON 0.00000095367431640625f // 2 ^ (-20)
 #define PI 3.1415926535897932384626433832795f
-#define ONE_OVER_PI 1.0f / 3.1415926535897932384626433832795f
-#define ONE_OVER_TWO_PI 1.0f / (2.0f * 3.1415926535897932384626433832795f)
+#define ONE_OVER_PI 1.0f / PI
+#define ONE_OVER_TWO_PI 1.0f / (2.0f * PI)
 #define UINT_MAX 0xffffffffU
 #define INV_UINT_MAX 1.0f / float(UINT_MAX)
 
@@ -137,8 +137,7 @@ float fresnel_function(float vDotH, float refractionRatio);
 
 vec2  sample_sphere(vec3 direction);
 bool  triangle_intersect(int triangleId, in Ray ray, out HitInfo info);
-float squared_aabb_distance(vec3 point, vec3 aabbmin, vec3 aabbmax);
-bool  aabb_intersect(int nodeId, Ray ray, out float distance);
+bool  aabb_intersect(vec3 aabbMin, vec3 aabbMax, Ray ray, out float distance);
 void  get_triangle(int triangleId, out Triangle triangle);
 vec4  get_color_from_texture(int textureId, vec2 uv);
 bool  hit(in Ray ray, out HitInfo info);
@@ -170,9 +169,10 @@ void main()
 	Ray ray;
 	ray.origin = constants.cameraPosition;
 	const int numberOfSectors = 64;
-	ivec2 gridOffset = ivec2(constants.frameCount, int(constants.frameCount / numberOfSectors));
+	const float invNumberOfSectors = 1.0f / float(numberOfSectors);
+	ivec2 gridOffset = ivec2(constants.frameCount, int(constants.frameCount * invNumberOfSectors));
 	gridOffset = ivec2(mod(gridOffset, numberOfSectors));
-	vec2 offset = (vec2(rand(), rand()) + vec2(gridOffset)) / float(numberOfSectors) - 0.5f;
+	vec2 offset = (vec2(rand(), rand()) + vec2(gridOffset)) * invNumberOfSectors - 0.5f;
 	vec3 randomOffset = (offset.x * constants.pixelDeltaU) + (offset.y * constants.pixelDeltaV);
 	ray.direction = normalize(imageLoad(rayDirections, gid).xyz + randomOffset);
 	
@@ -278,7 +278,7 @@ vec3 calculate_lambertian_material(inout Ray ray, HitInfo info, vec3 normal, vec
 	float scatteringPDF = get_cosine_pdf(normal, ray.direction);
 	float pdfValue = get_pdf_value(ray.origin, ray.direction, normal);
 			
-	return albedo * scatteringPDF / pdfValue;
+	return (albedo * scatteringPDF) / pdfValue;
 }
 
 
@@ -375,12 +375,12 @@ float fresnel_function(float vDotH, float refractionRatio)
 // float from 0 to 1
 float rand() 
 {
-	//Wang hash function
-	seed = (seed ^ 61) ^ (seed >> 16);
-	seed *= 9;
-	seed = seed ^ (seed >> 4);
-	seed *= 0x27d4eb2dU;
-	seed = seed ^ (seed >> 15);
+	//Bob Jenkins' One-At-A-Time hashing algorithm
+    seed += ( seed << 10u );
+    seed ^= ( seed >>  6u );
+    seed += ( seed <<  3u );
+    seed ^= ( seed >> 11u );
+    seed += ( seed << 15u );
     return float(seed) * (INV_UINT_MAX);
 }
 
@@ -397,7 +397,7 @@ float rand(float x, float y)
 vec3 rand_in_unit_sphere()
 {
 	vec3 randomVector;
-	vec2 bounds = { -1.0f, 1.0f };
+	const vec2 bounds = { -1.0f, 1.0f };
 	
 	randomVector.x = rand(bounds);
 	randomVector.y = rand(bounds);
@@ -409,11 +409,7 @@ vec3 rand_in_unit_sphere()
 vec3 rand_in_unit_hemisphere(vec3 normal)
 {
 	vec3 randomVector = rand_in_unit_sphere();
-	if (dot(randomVector, normal) > 0.0f)
-	{
-		return randomVector;
-	}
-	return -randomVector; //TODO: CHECK THIS !!!
+	return mix(-randomVector, randomVector, float(dot(randomVector, normal) > 0.0f)); //TODO: CHECK THIS !!!
 }
 
 vec3 random_cosine_direction()
@@ -433,7 +429,7 @@ vec3 random_cosine_direction()
 vec2 sample_sphere(vec3 direction)
 {
 	vec2 uv;
-	uv.x = (atan(-direction.z, direction.x) + PI) * ONE_OVER_TWO_PI;
+	uv.x = 0.5f + (atan(-direction.z, direction.x) * ONE_OVER_TWO_PI);
 	uv.y = acos(direction.y) * ONE_OVER_PI;
     return uv;
 }
@@ -497,7 +493,7 @@ bool triangle_intersect(int triangleId, in Ray ray, out HitInfo info)
     vec3 sXe1 = cross(s, edge1);
     float v = invDet * dot(ray.direction, sXe1);
 
-    if (v < 0.0f || u + v > 1.0f)
+    if (v < 0.0f || (u + v) > 1.0f)
 	{
 		return false;
 	}
@@ -513,18 +509,18 @@ bool triangle_intersect(int triangleId, in Ray ray, out HitInfo info)
 	
 	info.materialId = triangle.materialId;
 	float w = 1.0f - u - v;
-	info.uv = triangle.uvs[0] * w
-			+ triangle.uvs[1] * u
-			+ triangle.uvs[2] * v;
+	info.uv = (triangle.uvs[0] * w)
+			+ (triangle.uvs[1] * u)
+			+ (triangle.uvs[2] * v);
 	if (get_color_from_texture(materials[info.materialId].albedo, info.uv).a < 0.2f)
 	{
 		return false;
 	}
 	info.distance = d;
 	info.point = ray.origin + ray.direction * d;
-	info.normal = triangle.normals[0] * w 
-				+ triangle.normals[1] * u 
-				+ triangle.normals[2] * v;
+	info.normal = (triangle.normals[0] * w) 
+				+ (triangle.normals[1] * u) 
+				+ (triangle.normals[2] * v);
 	info.normal = normalize(info.normal);
 	info.frontFace = dot(info.normal, ray.direction) < 0.0f;
 	if (!info.frontFace)
@@ -537,27 +533,18 @@ bool triangle_intersect(int triangleId, in Ray ray, out HitInfo info)
 	return true;
 }
 
-float squared_aabb_distance(vec3 point, vec3 aabbmin, vec3 aabbmax) 
-{
-	vec3 d; 
-    d.x = max(0.0f, max(aabbmin.x - point.x, point.x - aabbmax.x));
-    d.y = max(0.0f, max(aabbmin.y - point.y, point.y - aabbmax.y));
-    d.z = max(0.0f, max(aabbmin.z - point.z, point.z - aabbmax.z));
-
-    return dot(d, d);
-}
-
-bool aabb_intersect(int nodeId, Ray ray, out float distance)
+bool aabb_intersect(vec3 aabbMin, vec3 aabbMax, Ray ray, out float distance)
 {
 	vec3 invDir = vec3(1.0f) / (ray.direction + EPSILON);
 	
-	vec3 tbot = invDir * (nodes[nodeId].min - ray.origin);
-	vec3 ttop = invDir * (nodes[nodeId].max - ray.origin);
+	vec3 tbot = invDir * (aabbMin - ray.origin);
+	vec3 ttop = invDir * (aabbMax - ray.origin);
 	vec3 tmin = min(ttop, tbot);
 	vec3 tmax = max(ttop, tbot);
 	float t0 = max(max(tmin.x, tmin.y), tmin.z);
 	float t1 = min(min(tmax.x, tmax.y), tmax.z);
-	distance = squared_aabb_distance(ray.origin, nodes[nodeId].min, nodes[nodeId].max);//Distance is set even if there is no intersection
+	vec3 d = max(vec3(0.0f), max(aabbMin - ray.origin, ray.origin - aabbMax));
+	distance = dot(d, d);//Distance is set even if there is no intersection
 	return t1 > max(t0, 0.0f);
 }
 
@@ -572,22 +559,23 @@ bool hit(in Ray ray, out HitInfo info)
 	
 	while (nodeId != -1)
 	{
+		BVHNode node = nodes[nodeId];
 		float distanceSquared;
-		if (!aabb_intersect(nodeId, ray, distanceSquared) || distanceSquared > info.distance * info.distance)
+		if (!aabb_intersect(node.min, node.max, ray, distanceSquared) || distanceSquared > info.distance * info.distance)
 		{
-			nodeId = nodes[nodeId].skipId;
+			nodeId = node.skipId;
 			continue;
 		}
 		
-		if (nodes[nodeId].primitiveId != -1)
+		if (node.primitiveId != -1)
 		{ // Node is leaf node and contains triangle
-			if (triangle_intersect(nodes[nodeId].primitiveId, ray, tempInfo) && tempInfo.distance < info.distance)
+			if (triangle_intersect(node.primitiveId, ray, tempInfo) && tempInfo.distance < info.distance)
 			{
 				info = tempInfo;
 				result = true;
 			}
 		}
-		nodeId = nodes[nodeId].nextId;
+		nodeId = node.nextId;
 	}
 	
 	return result;
@@ -641,7 +629,7 @@ vec3 get_cosine_direction(vec3 normal)
 	vec3 u = cross(normal, v);
 	
 	vec3 localDirection = random_cosine_direction();
-	localDirection = localDirection.x * u + localDirection.y * v + localDirection.z * normal;
+	localDirection = (localDirection.x * u) + (localDirection.y * v) + (localDirection.z * normal);
 	return normalize(localDirection);
 }
 
@@ -685,7 +673,7 @@ vec3 get_random_in_triangle(int triangleId)
     float beta  = r1 * (1.0f - r2);
     float gamma = r1 * r2;
 
-    vec3 p = a * alpha + b * beta + c * gamma;
+    vec3 p = (a * alpha) + (b * beta) + (c * gamma);
 	
 	return p;
 }
@@ -712,11 +700,7 @@ vec3 get_light_path(vec3 origin)
 
 vec3 get_pdf_direction(vec3 origin, vec3 normal)
 {
-	if (rand() > 0.5f)
-	{
-		return get_cosine_direction(normal);
-	}
-	return get_light_path(origin);
+	return rand() > 0.5f ? get_cosine_direction(normal) : get_light_path(origin);
 }
 
 float get_pdf_value(vec3 origin, vec3 direction, vec3 normal)
